@@ -165,6 +165,7 @@ const MODULES = {
       {label:'Perlu Cetak Ulang', value:rows.filter(r=>r.status==='Cetak Ulang'||r.status==='Rusak').length, icon:'printer', tint:'amber'},
       {label:'Belum Dicetak', value:rows.filter(r=>r.status==='Belum Dicetak').length, icon:'alertCircle', tint:'slate'},
     ],
+    detailIsTag:true,
   },
 
   'sensus': {
@@ -482,6 +483,7 @@ const MODULES = {
       {label:'Update Terakhir', value:'29 Agu 2026', icon:'calendar', tint:'gold'},
     ],
     isReports:true,
+    detailIsReport:true,
   },
 };
 

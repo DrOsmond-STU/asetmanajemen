@@ -495,3 +495,80 @@ table.data-table tbody tr:last-child td{border-bottom:none}
 footer.app-footer{
   text-align:center;font-size:11.5px;color:var(--text-400);padding:22px 0 10px;
 }
+
+/* ==========================================================================
+   Add-data form (drawer)
+   ========================================================================== */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+.form-grid .field-full{grid-column:1 / -1}
+.form-grid .field{margin-bottom:0}
+.field .req{color:var(--red-600)}
+.field-hint{font-size:11px;color:var(--text-500);margin-top:4px}
+.field-error{font-size:11.5px;color:var(--red-600);margin-top:4px;display:none}
+.field.has-error .input{border-color:var(--red-600);box-shadow:0 0 0 3px rgba(220,38,38,.12)}
+.field.has-error .field-error{display:block}
+
+/* ==========================================================================
+   QR / Barcode label
+   ========================================================================== */
+.tag-label-card{
+  width:340px;max-width:100%;margin:0 auto;background:#fff;border:1.5px dashed var(--border-strong);
+  border-radius:12px;padding:18px;text-align:center;
+}
+.tag-label-card .tl-org{font-size:10.5px;color:var(--text-500);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.tag-label-card .tl-name{font-size:14px;font-weight:800;color:var(--text-900);margin-bottom:10px;min-height:18px}
+.tag-label-card .tl-qr{display:flex;justify-content:center;margin-bottom:10px}
+.tag-label-card .tl-qr svg,.tag-label-card .tl-qr img{width:132px;height:132px;image-rendering:pixelated}
+.tag-label-card .tl-barcode{margin-bottom:8px}
+.tag-label-card .tl-barcode svg{width:100%;height:auto}
+.tag-label-card .tl-nup{font-size:11.5px;color:var(--text-700);font-family:ui-monospace,monospace}
+.tag-label-card .tl-id{font-size:10.5px;color:var(--text-500);margin-top:2px;font-family:ui-monospace,monospace}
+.qr-inline-box{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.qr-inline-box .qr-img{width:96px;height:96px;flex:none;border:1px solid var(--border);border-radius:8px;padding:6px;background:#fff}
+.qr-inline-box .qr-img svg{width:100%;height:100%}
+
+/* ==========================================================================
+   Report viewer
+   ========================================================================== */
+.report-overlay{position:fixed;inset:0;background:rgba(9,16,32,.6);z-index:150;display:flex;flex-direction:column;align-items:center;overflow-y:auto;padding:26px 16px 60px}
+.report-toolbar{
+  width:100%;max-width:840px;display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:16px;position:sticky;top:0;
+}
+.report-toolbar .rt-title{color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.report-toolbar .rt-title svg{width:18px;height:18px;flex:none}
+.report-toolbar .rt-actions{display:flex;gap:8px}
+.report-paper{
+  width:100%;max-width:840px;background:#fff;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.35);
+  padding:44px 48px;color:var(--text-900);
+}
+.report-letterhead{display:flex;align-items:center;gap:14px;border-bottom:3px solid var(--navy-900);padding-bottom:16px;margin-bottom:22px}
+.report-letterhead .rl-logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--blue-500),var(--gold-500));display:flex;align-items:center;justify-content:center;flex:none}
+.report-letterhead .rl-logo svg{width:24px;height:24px;color:#fff}
+.report-letterhead .rl-org{font-size:11px;color:var(--text-500);text-transform:uppercase;letter-spacing:.05em}
+.report-letterhead .rl-title{font-size:19px;font-weight:800;color:var(--navy-900)}
+.report-meta-row{display:flex;flex-wrap:wrap;gap:22px;margin-bottom:22px;font-size:12px}
+.report-meta-row div span{display:block}
+.report-meta-row .rm-k{color:var(--text-500);text-transform:uppercase;font-size:10px;letter-spacing:.04em;margin-bottom:2px}
+.report-meta-row .rm-v{font-weight:700;color:var(--text-900)}
+.report-section-title{font-size:13px;font-weight:800;color:var(--navy-900);text-transform:uppercase;letter-spacing:.03em;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.report-paper table.data-table{font-size:12px}
+.report-paper .kpi-grid{margin-bottom:0}
+.report-footnote{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);font-size:10.5px;color:var(--text-500);display:flex;justify-content:space-between}
+
+.tag-print-overlay{
+  position:fixed;inset:0;background:rgba(9,16,32,.65);z-index:170;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;
+}
+.tag-print-overlay .tag-label-card{background:#fff}
+
+@media print{
+  body *{visibility:hidden}
+  .report-overlay, .report-overlay *{visibility:visible}
+  .report-overlay{position:absolute;inset:0;background:#fff;padding:0;display:block;overflow:visible}
+  .report-toolbar{display:none !important}
+  .report-paper{box-shadow:none;max-width:100%;padding:16px 6px}
+  .tag-print-overlay, .tag-print-overlay *{visibility:visible}
+  .tag-print-overlay{position:absolute;inset:0;background:#fff;padding:40px;display:flex !important;align-items:center;justify-content:center}
+  .tag-print-overlay .tp-toolbar{display:none !important}
+}
