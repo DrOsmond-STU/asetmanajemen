@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIMASET BMN — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%231d4ed8%22/><path d=%22M12 4l7 3v5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V7l7-3z%22 fill=%22%23fff%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/style.css">
+<script src="../assets/js/vendor/chart.umd.js"></script>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-logo" id="sb-logo"></div>
+      <div class="sidebar-brand">
+        <b>SIMASET BMN</b>
+        <span>Poltek SSN · v2.0</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-foot">
+      <button class="sidebar-collapse-btn" id="collapse-btn">
+        <span id="collapse-icon"></span>
+        <span>Ciutkan menu</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main-col">
+    <header class="topbar">
+      <button class="hamburger" id="hamburger-btn"></button>
+      <div class="topbar-search">
+        <span id="search-icon"></span>
+        <input type="text" id="global-search" placeholder="Cari aset, tag, work order, custodian…">
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" id="notif-btn"><span id="bell-icon"></span><span class="dot"></span></button>
+        <button class="icon-btn" id="settings-btn"><span id="settings-icon"></span></button>
+        <div class="topbar-user" id="user-menu">
+          <div class="avatar" id="user-avatar">AM</div>
+          <div class="who">
+            <b id="user-name">—</b>
+            <span id="user-role">—</span>
+          </div>
+          <span id="chevron-icon"></span>
+        </div>
+      </div>
+    </header>
+
+    <main class="content" id="content">
+      <!-- rendered by app.js -->
+    </main>
+
+    <footer class="app-footer">SIMASET BMN v2.0 — Purwarupa UI/UX · Data yang ditampilkan adalah data simulasi untuk keperluan demonstrasi.</footer>
+  </div>
+</div>
+
+<div id="drawer-root"></div>
+<div id="toast-root"></div>
+
+<script src="../assets/js/icons.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/modules.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

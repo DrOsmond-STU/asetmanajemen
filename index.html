@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIMASET BMN — Masuk</title>
+<meta name="description" content="SIMASET BMN — Integrated Asset & BMN Lifecycle Management System berbasis ISO 55000/55001. Purwarupa UI/UX.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%231d4ed8%22/><path d=%22M12 4l7 3v5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V7l7-3z%22 fill=%22%23fff%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-visual">
+    <div class="login-brand">
+      <div class="sidebar-logo" id="icon-logo-slot"></div>
+      <div>
+        <div class="brand-name">SIMASET BMN</div>
+        <div class="brand-sub">Politeknik Siber dan Sandi Negara</div>
+      </div>
+    </div>
+
+    <div class="login-hero">
+      <h1>Satu platform untuk seluruh siklus hidup aset &amp; BMN.</h1>
+      <p>Integrated Asset &amp; BMN Lifecycle Management System berbasis prinsip ISO 55000/55001 — mencakup register, sensus, custodian, maintenance, risiko, aset siber, sanitisasi media, hingga disposal.</p>
+      <div class="login-badges">
+        <span class="login-badge">ISO 55000 / 55001</span>
+        <span class="login-badge">Rekonsiliasi SAKTI/SIMAN</span>
+        <span class="login-badge">NIST SP 800-88 Rev.2</span>
+        <span class="login-badge">21 Modul Terintegrasi</span>
+      </div>
+      <div class="login-stats">
+        <div class="login-stat"><b>21</b><span>Modul Fungsional</span></div>
+        <div class="login-stat"><b>10</b><span>Peran Pengguna</span></div>
+        <div class="login-stat"><b>ISO</b><span>55000/55001 Aligned</span></div>
+      </div>
+    </div>
+
+    <div class="login-foot">© 2026 Poltek SSN · SIMASET BMN v2.0 — Purwarupa UI/UX, seluruh data bersifat simulasi.</div>
+  </div>
+
+  <div class="login-form-wrap">
+    <div class="login-card">
+      <div class="mobile-brand">
+        <div class="sidebar-logo" id="icon-logo-slot-mobile" style="background:linear-gradient(135deg,#2563eb,#c8942c)"></div>
+        <div>
+          <div style="font-weight:800;font-size:15px;color:#0f172a">SIMASET BMN</div>
+          <div style="font-size:11px;color:#64748b">Poltek SSN</div>
+        </div>
+      </div>
+
+      <h2>Masuk ke akun Anda</h2>
+      <p class="lede">Gunakan akun dinas Anda untuk mengakses SIMASET BMN. Ini adalah purwarupa — gunakan salah satu akun demo di bawah.</p>
+
+      <div id="login-alert"></div>
+
+      <form id="login-form" autocomplete="off">
+        <div class="field">
+          <label for="email">Email / NIP</label>
+          <div class="input-icon-wrap">
+            <span id="icon-mail-slot"></span>
+            <input class="input" type="text" id="email" placeholder="nama@simaset.go.id" value="asset.manager@simaset.go.id" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="password">Kata Sandi</label>
+          <div class="input-icon-wrap">
+            <span id="icon-lock-slot"></span>
+            <input class="input" type="password" id="password" placeholder="••••••••" value="simaset123" required>
+            <button type="button" class="pw-toggle" id="pw-toggle" aria-label="Tampilkan kata sandi"></button>
+          </div>
+        </div>
+        <div class="row-between">
+          <label class="checkbox-line"><input type="checkbox" checked> Ingat saya</label>
+          <button type="button" class="link-btn">Lupa kata sandi?</button>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Masuk</button>
+      </form>
+
+      <details class="demo-accounts">
+        <summary id="demo-summary-icon">Gunakan akun demo (klik untuk isi otomatis)</summary>
+        <div class="demo-list" id="demo-list"></div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div id="toast-root"></div>
+
+<script src="assets/js/icons.js"></script>
+<script src="assets/js/data.js"></script>
+<script>
+  document.getElementById('icon-logo-slot').innerHTML = icon('shield','');
+  document.getElementById('icon-logo-slot').querySelector('svg').style.cssText='width:20px;height:20px;color:#fff';
+  document.getElementById('icon-logo-slot-mobile').innerHTML = icon('shield','');
+  document.getElementById('icon-logo-slot-mobile').querySelector('svg').style.cssText='width:18px;height:18px;color:#fff';
+  document.getElementById('icon-mail-slot').innerHTML = icon('mail','');
+  document.getElementById('icon-lock-slot').innerHTML = icon('lock','');
+
+  const pwInput = document.getElementById('password');
+  const pwToggle = document.getElementById('pw-toggle');
+  let pwVisible = false;
+  function renderPwIcon(){ pwToggle.innerHTML = icon(pwVisible ? 'eyeOff':'eye',''); }
+  renderPwIcon();
+  pwToggle.addEventListener('click', ()=>{
+    pwVisible = !pwVisible;
+    pwInput.type = pwVisible ? 'text':'password';
+    renderPwIcon();
+  });
+
+  // Populate demo accounts from dummy data
+  const demoList = document.getElementById('demo-list');
+  SIMASET_DATA.demo_users.forEach(u=>{
+    const el = document.createElement('div');
+    el.className='demo-chip';
+    el.innerHTML = `<b>${u.role}</b><span>${u.email}</span>`;
+    el.addEventListener('click', ()=>{
+      document.getElementById('email').value = u.email;
+      document.getElementById('password').value = u.password;
+    });
+    demoList.appendChild(el);
+  });
+
+  function showAlert(msg){
+    document.getElementById('login-alert').innerHTML =
+      `<div class="alert alert-error">${icon('alertCircle','')}<div>${msg}</div></div>`;
+  }
+
+  document.getElementById('login-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    const pass = document.getElementById('password').value;
+    const user = SIMASET_DATA.demo_users.find(u => u.email.toLowerCase()===email);
+    const btn = document.getElementById('login-btn');
+    if(!user || pass !== user.password){
+      showAlert('Email atau kata sandi tidak dikenali. Silakan pilih salah satu akun demo di bawah.');
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Memproses…';
+    sessionStorage.setItem('simaset_user', JSON.stringify(user));
+    setTimeout(()=>{ window.location.href = 'app/index.html#/dashboard'; }, 450);
+  });
+</script>
+</body>
+</html>
