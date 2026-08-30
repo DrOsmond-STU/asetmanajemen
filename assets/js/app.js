@@ -119,8 +119,8 @@
   }
 
   // ---- Topbar / user ------------------------------------------------------
-  qs('#sb-logo').innerHTML = icon('shield');
-  qs('#sb-logo').querySelector('svg').style.cssText='width:20px;height:20px;color:#fff';
+  qs('#sb-logo').innerHTML = icon('lpkmi');
+  qs('#sb-logo').querySelector('svg').style.cssText='width:24px;height:24px;color:#fff';
   qs('#collapse-icon').innerHTML = icon('chevronsLeft');
   qs('#hamburger-btn').innerHTML = icon('menu');
   qs('#search-icon').innerHTML = icon('search');

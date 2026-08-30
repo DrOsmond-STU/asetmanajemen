@@ -14,7 +14,7 @@
 <div class="login-page">
   <div class="login-visual">
     <div class="login-brand">
-      <img src="assets/img/lpkmi-logo.svg" alt="LPKMI Logo" class="sidebar-logo" style="width:60px;height:60px;object-fit:contain;">
+      <div class="sidebar-logo" id="icon-logo-slot"></div>
       <div>
         <div class="brand-name">SIMASET BMN</div>
         <div class="brand-sub">LPKMI - Lembaga Pusat Kajian Manajemen Indonesia</div>
@@ -91,10 +91,10 @@
 <script src="assets/js/icons.js"></script>
 <script src="assets/js/data.js"></script>
 <script>
-  document.getElementById('icon-logo-slot').innerHTML = icon('shield','');
-  document.getElementById('icon-logo-slot').querySelector('svg').style.cssText='width:20px;height:20px;color:#fff';
-  document.getElementById('icon-logo-slot-mobile').innerHTML = icon('shield','');
-  document.getElementById('icon-logo-slot-mobile').querySelector('svg').style.cssText='width:18px;height:18px;color:#fff';
+  document.getElementById('icon-logo-slot').innerHTML = icon('lpkmi','');
+  document.getElementById('icon-logo-slot').querySelector('svg').style.cssText='width:24px;height:24px;color:#fff';
+  document.getElementById('icon-logo-slot-mobile').innerHTML = icon('lpkmi','');
+  document.getElementById('icon-logo-slot-mobile').querySelector('svg').style.cssText='width:20px;height:20px;color:#fff';
   document.getElementById('icon-mail-slot').innerHTML = icon('mail','');
   document.getElementById('icon-lock-slot').innerHTML = icon('lock','');
 
