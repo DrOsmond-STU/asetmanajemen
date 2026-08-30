@@ -119,8 +119,7 @@
   }
 
   // ---- Topbar / user ------------------------------------------------------
-  qs('#sb-logo').innerHTML = icon('lpkmi');
-  qs('#sb-logo').querySelector('svg').style.cssText='width:24px;height:24px;color:#fff';
+  // Logo displayed via CSS background-image from lpkmi-logo.svg
   qs('#collapse-icon').innerHTML = icon('chevronsLeft');
   qs('#hamburger-btn').innerHTML = icon('menu');
   qs('#search-icon').innerHTML = icon('search');
