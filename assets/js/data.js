@@ -1,6 +1,6 @@
 // Data dummy SIMASET BMN - untuk keperluan purwarupa UI/UX (bukan data produksi)
 const SIMASET_DATA = {
-  "org": "Politeknik Siber dan Sandi Negara (Poltek SSN)",
+  "org": "Lembaga Pusat Kajian Manajemen Indonesia (LPKMI)",
   "generated_at": "2026-08-29",
   "buildings": [
     {
@@ -9452,7 +9452,7 @@ const SIMASET_DATA = {
     "policy": [
       {
         "id": "POL-001",
-        "title": "Asset Management Policy Poltek SSN",
+        "title": "Asset Management Policy LPKMI",
         "version": "1.2",
         "status": "Berlaku",
         "approved_by": "Direktur",
