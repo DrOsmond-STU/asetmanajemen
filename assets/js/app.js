@@ -119,8 +119,8 @@
   }
 
   // ---- Topbar / user ------------------------------------------------------
-  qs('#sb-logo').innerHTML = icon('shield');
-  qs('#sb-logo').querySelector('svg').style.cssText='width:20px;height:20px;color:#fff';
+  qs('#sb-logo').classList.add('sidebar-logo-img');
+  qs('#sb-logo').innerHTML = '<img src="../assets/img/lpkmi-logo-128.png" alt="Logo LPKMI">';
   qs('#collapse-icon').innerHTML = icon('chevronsLeft');
   qs('#hamburger-btn').innerHTML = icon('menu');
   qs('#search-icon').innerHTML = icon('search');

@@ -235,6 +235,10 @@ ul{list-style:none;margin:0;padding:0}
   display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:15px;
   box-shadow:0 4px 12px rgba(0,0,0,.25);
 }
+.sidebar-logo.sidebar-logo-img{
+  background:#fff;border-radius:50%;box-shadow:0 4px 12px rgba(0,0,0,.25);padding:2px;
+}
+.sidebar-logo.sidebar-logo-img img{width:100%;height:100%;object-fit:contain;border-radius:50%;display:block}
 .sidebar-brand{overflow:hidden;transition:opacity .15s}
 .sidebar-brand b{display:block;font-size:14.5px;font-weight:800;color:#fff;white-space:nowrap}
 .sidebar-brand span{display:block;font-size:10.5px;color:#8ea6cc;white-space:nowrap;letter-spacing:.03em}
