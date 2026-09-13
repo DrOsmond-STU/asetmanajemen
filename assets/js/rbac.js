@@ -69,7 +69,7 @@ const RBAC_MODULES = [
   'reconciliation', 'disposal',
   'cyber', 'sanitization',
   'governance', 'audit', 'documents',
-  'reporting', 'integrasi', 'approval', 'access',
+  'reporting', 'integrasi', 'approval', 'access', 'users',
 ];
 
 const ROLE_ACCESS = {
@@ -83,7 +83,7 @@ const ROLE_ACCESS = {
     reconciliation:'RW', disposal:'RW',
     cyber:'RW', sanitization:'RW',
     governance:'RW', audit:'RW', documents:'RW',
-    reporting:'RW', integrasi:'RW', approval:'R', access:'R',
+    reporting:'RW', integrasi:'RW', approval:'R', access:'R', users:'RW',
   },
 
   // Lifecycle, risk, condition, decision + approver operasional.
@@ -159,7 +159,7 @@ const ROLE_ACCESS = {
     reconciliation:'R', disposal:'R',
     cyber:'R', sanitization:'R',
     governance:'R', audit:'R', documents:'R',
-    reporting:'R', integrasi:'R', approval:'R', access:'R',
+    reporting:'R', integrasi:'R', approval:'R', access:'R', users:'R',
   },
 
   // Dashboard dan persetujuan.
@@ -169,7 +169,7 @@ const ROLE_ACCESS = {
     reconciliation:'A', disposal:'A',
     sanitization:'A', iot:'R',
     governance:'R', audit:'R',
-    reporting:'R', integrasi:'R', approval:'A', access:'R',
+    reporting:'R', integrasi:'R', approval:'A', access:'R', users:'R',
   },
 };
 

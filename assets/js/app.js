@@ -326,6 +326,7 @@
         ${readOnlyHint}
         <button class="btn btn-outline btn-sm" id="export-btn">${icon('download')}Ekspor CSV</button>
         ${hasAddForm ? `<button class="btn btn-primary btn-sm" id="add-btn">${icon('plus')}Tambah Baru</button>` : ''}`})}
+      ${options.hintHtml ? `<div class="module-hint">${icon('info')}<span>${options.hintHtml}</span></div>` : ''}
       <div id="list-kpis"></div>
       <div class="panel">
         <div class="panel-body" style="padding-bottom:0">${filterBarHtml}</div>
@@ -761,6 +762,27 @@
       },
       successMsg:'Improvement register berhasil diperbarui.',
     },
+
+    'users': {
+      title:'Tambah Pengguna', dataset:'users',
+      fields:[
+        {key:'name', label:'Nama Lengkap', type:'text', required:true, placeholder:'mis. Andi Prasetyo'},
+        {key:'email', label:'Email / Akun', type:'text', required:true, placeholder:'nama@simaset.go.id'},
+        {key:'role', label:'Peran', type:'select', required:true, options:()=>staticOpts(RBAC.roleNames())},
+        {key:'nip', label:'NIP', type:'text', placeholder:'19900101 201501 1 001'},
+        {key:'unit', label:'Unit Kerja', type:'select', options:()=>staticOpts(D.units||[])},
+        {key:'status', label:'Status Akun', type:'select', default:'Aktif', options:()=>staticOpts(['Aktif','Nonaktif','Cuti'])},
+        {key:'mfa', label:'Autentikasi Ganda (MFA)', type:'select', default:'Nonaktif', options:()=>staticOpts(['Aktif','Nonaktif'])},
+      ],
+      build(v){
+        return {
+          user_id: nextId(D.users,'user_id'), name:v.name, email:v.email, role:v.role,
+          nip:v.nip||'-', unit:v.unit||'-', status:v.status||'Aktif', mfa:v.mfa||'Nonaktif',
+          last_login:'Belum pernah', created_at: todayStr(), akun_demo:'Tidak',
+        };
+      },
+      successMsg:'Pengguna baru berhasil ditambahkan. Hak akses mengikuti matriks peran yang dipilih.',
+    },
   };
 
   function renderFormField(f, prefill){
@@ -863,6 +885,7 @@
     'audit': ['audit_id','scope','finding','severity','root_cause','corrective_action','pic','due_date','status','repeat_finding'],
     'documents': ['document_id','asset_id','asset_name','type','version','uploaded_by','uploaded_at','expiry'],
     'reporting': ['report_id','name','category','period','unit'],
+    'users': ['user_id','name','email','role','nip','unit','status','mfa','last_login','created_at','akun_demo'],
   };
 
   function openGenericDetail(config, row, extraHtml){
@@ -885,6 +908,27 @@
           </div>
           <div class="progress"><i style="width:${Math.min(100,row[k])}%;background:var(--${c==='blue'?'blue-500':c==='violet'?'violet-600':'green-600'})"></i></div>
         </div>`).join('');
+    }
+    if(moduleId==='users'){
+      // Ringkasan kewenangan peran pengguna berdasarkan matriks RBAC
+      const c = RBAC.countByLevel(row.role);
+      const listOf = (lvl)=> RBAC_MODULES.filter(m=> RBAC.level(row.role,m)===lvl)
+        .map(m=> m==='dashboard' ? 'Dashboard Eksekutif' : (MODULES[m] ? MODULES[m].title : m));
+      const chips = (lvl, cls)=> listOf(lvl).length
+        ? `<div class="thumb-row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+             ${listOf(lvl).map(t=>`<span class="badge ${cls}" style="padding:4px 9px;font-size:11px">${esc(t)}</span>`).join('')}
+           </div>`
+        : `<div style="color:var(--text-500);font-size:11.5px;margin-bottom:10px">Tidak ada.</div>`;
+      scoreSection = `
+        <div class="section-title">Cakupan Peran</div>
+        <p class="desc" style="margin:0 0 12px">${esc(RBAC.describe(row.role))}</p>
+        <div class="def-grid" style="margin-bottom:14px">
+          <div class="def-item"><span class="k">Total Modul</span><span class="v">${c.R+c.RW+c.A} dari ${RBAC_MODULES.length}</span></div>
+          <div class="def-item"><span class="k">Dapat Menyetujui</span><span class="v">${c.A} modul</span></div>
+        </div>
+        <div class="section-title">Dapat Menyetujui (A)</div>${chips('A','b-amber')}
+        <div class="section-title">Lihat + Ubah (RW)</div>${chips('RW','b-green')}
+        <div class="section-title">Lihat Saja (R)</div>${chips('R','b-blue')}`;
     }
     if(moduleId==='risk'){
       scoreSection = `<div class="section-title">Matriks Risiko</div>
@@ -2175,6 +2219,12 @@
     if(cfg.custom==='integrasi') return renderIntegrasi();
     if(cfg.custom==='approval') return renderApproval();
     if(cfg.custom==='access') return renderAccess();
+
+    if(hash==='users'){
+      return mountListPage(cfg, { moduleId: hash, pageSize: 10, hintHtml:
+        'Hak akses setiap pengguna ditentukan oleh perannya pada matriks <b>Hak Akses &amp; Peran</b> — klik satu baris untuk melihat rincian modul yang dapat diakses peran tersebut. '
+        + 'Sepuluh akun pertama adalah akun demo yang dapat dipakai masuk dengan kata sandi <b>simaset123</b>.' });
+    }
 
     mountListPage(cfg, { moduleId: hash });
   }

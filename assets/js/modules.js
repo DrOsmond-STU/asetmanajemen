@@ -52,6 +52,8 @@ const FIELD_LABELS = {
   corrective_action:'Corrective Action', pic:'PIC', due_date:'Jatuh Tempo', repeat_finding:'Temuan Berulang',
   document_id:'ID Dokumen', version:'Versi', uploaded_by:'Diunggah oleh', uploaded_at:'Tanggal Unggah', expiry:'Kedaluwarsa',
   report_id:'ID Laporan',
+  user_id:'User ID', role:'Peran', email:'Email / Akun', mfa:'Autentikasi Ganda (MFA)',
+  last_login:'Login Terakhir', created_at:'Dibuat', akun_demo:'Akun Demo',
 };
 
 function fLabel(key){ return FIELD_LABELS[key] || key; }
@@ -509,6 +511,37 @@ const MODULES = {
     group:'sistem', title:'Hak Akses & Peran', icon:'userCheck',
     desc:'Matriks kewenangan peran terhadap seluruh modul SIMASET BMN.',
     custom:'access',
+  },
+
+  'users': {
+    group:'sistem', title:'Manajemen Pengguna', icon:'users',
+    desc:'Daftar pengguna aplikasi beserta peran, unit kerja, status akun dan cakupan hak aksesnya.',
+    dataset:'users', idKey:'user_id',
+    searchKeys:['user_id','name','email','role','unit','nip'],
+    filters:[
+      {key:'role', label:'Peran'},
+      {key:'unit', label:'Unit Kerja'},
+      {key:'status', label:'Status'},
+    ],
+    columns:[
+      {key:'user_id', label:'User ID', cls:'cell-mono'},
+      {key:'name', label:'Nama', cls:'cell-strong'},
+      {key:'email', label:'Email / Akun'},
+      {key:'role', label:'Peran', badge:r=>'b-blue'},
+      {key:'unit', label:'Unit Kerja'},
+      {key:'akses', label:'Modul Akses', render:r=>{
+        const c = RBAC.countByLevel(r.role);
+        return `${c.R + c.RW + c.A} modul${c.A?` · ${c.A} setujui`:''}`;
+      }},
+      {key:'mfa', label:'MFA', badge:r=>r.mfa==='Aktif'?'b-green':'b-slate'},
+      {key:'status', label:'Status', badge:r=>badgeClassFor('status', r.status)},
+    ],
+    kpis:(rows)=>[
+      {label:'Total Pengguna', value:rows.length, icon:'users', tint:'blue'},
+      {label:'Akun Aktif', value:rows.filter(r=>r.status==='Aktif').length, icon:'checkCircle', tint:'green'},
+      {label:'Peran Digunakan', value:new Set(rows.map(r=>r.role)).size, icon:'userCheck', tint:'violet'},
+      {label:'MFA Aktif', value:rows.filter(r=>r.mfa==='Aktif').length, icon:'lock', tint:'gold'},
+    ],
   },
 };
 

@@ -6,6 +6,59 @@
 (function(){
   const ext = {
 
+    // ---- Pengguna Aplikasi ------------------------------------------------
+    // Sepuluh akun pertama adalah akun demo yang dapat dipakai masuk
+    // (kata sandi seragam: simaset123).
+    users: [
+      { user_id:'USR-001', name:'Sari Anggraini', email:'admin@simaset.go.id', role:'Super Admin',
+        nip:'19850312 201001 2 001', unit:'Unit TIK', status:'Aktif', mfa:'Aktif',
+        last_login:'2026-09-13 07:12', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-002', name:'Lestari Kusuma', email:'asset.manager@simaset.go.id', role:'Asset Manager',
+        nip:'19870721 201203 2 002', unit:'Bagian Umum & BMN', status:'Aktif', mfa:'Aktif',
+        last_login:'2026-09-13 07:40', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-003', name:'Fajar Nugroho', email:'bmn.officer@simaset.go.id', role:'BMN Officer',
+        nip:'19900204 201504 1 003', unit:'Bagian Umum & BMN', status:'Aktif', mfa:'Aktif',
+        last_login:'2026-09-13 06:55', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-004', name:'Yusuf Pratama', email:'finance@simaset.go.id', role:'Finance',
+        nip:'19880918 201301 1 004', unit:'Bagian Keuangan', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-12 16:22', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-005', name:'Joko Saputra', email:'maintenance@simaset.go.id', role:'Maintenance',
+        nip:'19911130 201606 1 005', unit:'Unit Sarana & Prasarana', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-13 07:33', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-006', name:'Muhammad Wijaya', email:'inspector@simaset.go.id', role:'Inspector',
+        nip:'19930415 201802 1 006', unit:'Unit Sarana & Prasarana', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-13 07:05', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-007', name:'Fajar Yulianto', email:'custodian@simaset.go.id', role:'Custodian',
+        nip:'19940822 201901 1 007', unit:'Unit Laboratorium', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-12 14:48', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-008', name:'Zainal Utomo', email:'cyber.officer@simaset.go.id', role:'Cyber Officer',
+        nip:'19890226 201404 1 008', unit:'Unit Keamanan Informasi', status:'Aktif', mfa:'Aktif',
+        last_login:'2026-09-13 07:18', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-009', name:'Cahyo Hidayat', email:'auditor@simaset.go.id', role:'Auditor',
+        nip:'19860609 201105 1 009', unit:'Satuan Pengawas Internal', status:'Aktif', mfa:'Aktif',
+        last_login:'2026-09-11 09:30', created_at:'2026-01-05', akun_demo:'Ya' },
+      { user_id:'USR-010', name:'Umar Hidayat', email:'management@simaset.go.id', role:'Management',
+        nip:'19800117 200604 1 010', unit:'Pimpinan', status:'Aktif', mfa:'Aktif',
+        last_login:'2026-09-13 06:40', created_at:'2026-01-05', akun_demo:'Ya' },
+
+      // Pengguna operasional tambahan (tanpa akun demo)
+      { user_id:'USR-011', name:'Rina Marlina', email:'rina.marlina@simaset.go.id', role:'Custodian',
+        nip:'19950503 202001 2 011', unit:'Bagian Akademik', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-12 10:14', created_at:'2026-03-18', akun_demo:'Tidak' },
+      { user_id:'USR-012', name:'Bayu Setiawan', email:'bayu.setiawan@simaset.go.id', role:'Maintenance',
+        nip:'19920711 201803 1 012', unit:'Unit Sarana & Prasarana', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-13 06:20', created_at:'2026-03-18', akun_demo:'Tidak' },
+      { user_id:'USR-013', name:'Dewi Anjani', email:'dewi.anjani@simaset.go.id', role:'Inspector',
+        nip:'19960228 202101 2 013', unit:'Unit Laboratorium', status:'Aktif', mfa:'Nonaktif',
+        last_login:'2026-09-10 13:05', created_at:'2026-04-02', akun_demo:'Tidak' },
+      { user_id:'USR-014', name:'Hendra Gunawan', email:'hendra.gunawan@simaset.go.id', role:'BMN Officer',
+        nip:'19910914 201705 1 014', unit:'Bagian Umum & BMN', status:'Nonaktif', mfa:'Nonaktif',
+        last_login:'2026-07-29 11:02', created_at:'2026-02-11', akun_demo:'Tidak' },
+      { user_id:'USR-015', name:'Ayu Permata', email:'ayu.permata@simaset.go.id', role:'Finance',
+        nip:'19930106 201902 2 015', unit:'Bagian Keuangan', status:'Cuti', mfa:'Aktif',
+        last_login:'2026-08-30 15:41', created_at:'2026-02-11', akun_demo:'Tidak' },
+    ],
+
     // ---- IoT & Telemetry -------------------------------------------------
     iot_devices: [
       { device_id:'IOT-001', asset_id:'AST-2026-000001', asset_name:'Genset Cadangan', device_type:'Sensor Bahan Bakar & Suhu',
