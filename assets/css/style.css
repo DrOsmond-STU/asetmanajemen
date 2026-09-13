@@ -199,6 +199,7 @@ ul{list-style:none;margin:0;padding:0}
 .demo-chip:hover{border-color:var(--blue-400)}
 .demo-chip b{color:var(--text-900);font-weight:600}
 .demo-chip span{color:var(--text-500)}
+.demo-chip .demo-perm{display:block;margin-top:2px;font-size:10.5px;color:var(--blue-600);font-weight:600}
 
 .alert{
   display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:var(--radius-sm);
@@ -258,6 +259,14 @@ ul{list-style:none;margin:0;padding:0}
 .nav-item svg{width:18px;height:18px;flex:none;opacity:.85}
 .nav-item span.label{overflow:hidden;text-overflow:ellipsis}
 .app-shell.collapsed .nav-item span.label{display:none}
+/* Penanda tingkat hak akses pada menu (R = lihat saja, A = dapat menyetujui) */
+.nav-perm{
+  margin-left:auto;flex:none;font-size:9.5px;font-weight:800;line-height:1;
+  padding:3px 5px;border-radius:5px;letter-spacing:.02em;
+}
+.nav-perm.perm-r{background:rgba(148,163,184,.22);color:#c7d5ea}
+.nav-perm.perm-a{background:rgba(200,148,44,.28);color:#f0cd85}
+.app-shell.collapsed .nav-perm{display:none}
 .nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
 .nav-item.active{background:rgba(37,99,235,.22);color:#fff}
 .nav-item.active::before{

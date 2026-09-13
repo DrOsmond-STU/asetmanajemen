@@ -16,6 +16,17 @@
   let activeCharts = [];
   function destroyCharts(){ activeCharts.forEach(c=>{ try{c.destroy();}catch(e){} }); activeCharts = []; }
 
+  // ---- Hak akses (RBAC) ---------------------------------------------------
+  const ROLE = CURRENT_USER.role;
+  const canRead    = (m)=> RBAC.canRead(ROLE, m);
+  const canWrite   = (m)=> RBAC.canWrite(ROLE, m);
+  const canApprove = (m)=> RBAC.canApprove(ROLE, m);
+
+  // Timer modul (mis. simulasi telemetry IoT) — dihentikan saat pindah halaman
+  let activeTimers = [];
+  function clearTimers(){ activeTimers.forEach(t=> clearInterval(t)); activeTimers = []; }
+  function addTimer(t){ activeTimers.push(t); return t; }
+
   // ---- Persistence for data added through the prototype -------------------
   // Purwarupa tidak memiliki backend; data baru disimpan pada localStorage
   // browser (per perangkat/browser) sehingga tetap ada saat halaman dimuat
@@ -158,12 +169,16 @@
     const nav = qs('#sidebar-nav');
     let html = '';
     NAV_GROUPS.forEach(g=>{
-      const items = NAV_ITEMS.filter(it=>it.group===g.id);
+      // hanya modul yang boleh dibaca oleh peran pengguna aktif
+      const items = NAV_ITEMS.filter(it=>it.group===g.id && canRead(it.id));
       if(!items.length) return;
       html += `<div class="nav-group-label">${esc(g.label)}</div>`;
       items.forEach(it=>{
         const isActive = it.id===activeId;
-        html += `<div class="nav-item ${isActive?'active':''}" data-route="${it.id}">${icon(it.icon)}<span class="label">${esc(it.title)}</span></div>`;
+        const lvl = RBAC.level(ROLE, it.id);
+        const mark = lvl==='A' ? '<span class="nav-perm perm-a" title="Dapat menyetujui">A</span>'
+                   : lvl==='R' ? '<span class="nav-perm perm-r" title="Hanya lihat">R</span>' : '';
+        html += `<div class="nav-item ${isActive?'active':''}" data-route="${it.id}">${icon(it.icon)}<span class="label">${esc(it.title)}</span>${mark}</div>`;
       });
     });
     nav.innerHTML = html;
@@ -202,6 +217,11 @@
 
   function badgeHtml(text, cls){
     return `<span class="badge ${cls}"><span class="dot-status" style="background:currentColor"></span>${esc(text)}</span>`;
+  }
+
+  // Penanda bahwa peran aktif hanya berhak melihat data pada halaman ini
+  function readOnlyBadge(){
+    return `<span class="badge b-blue" style="padding:6px 12px;font-size:12px">${icon('eye')}Akses Lihat Saja</span>`;
   }
 
   // Generic list-page controller (search + filters + pagination + drawer)
@@ -297,9 +317,13 @@
         <span class="filter-count" id="list-count"></span>
       </div>`;
 
-    const hasAddForm = !!FORM_CONFIGS[options.moduleId];
+    // Tombol tambah hanya untuk peran dengan kewenangan ubah pada modul ini
+    const hasAddForm = !!FORM_CONFIGS[options.moduleId] && canWrite(options.moduleId);
+    const readOnlyHint = options.moduleId && canRead(options.moduleId) && !canWrite(options.moduleId)
+      ? `<span class="badge b-blue" style="padding:6px 12px;font-size:12px">${icon('eye')}Akses Lihat Saja</span>` : '';
     qs('#content').innerHTML = `
       ${pageHead({title:config.title, desc:config.desc, actions: options.actionsHtml || `
+        ${readOnlyHint}
         <button class="btn btn-outline btn-sm" id="export-btn">${icon('download')}Ekspor CSV</button>
         ${hasAddForm ? `<button class="btn btn-primary btn-sm" id="add-btn">${icon('plus')}Tambah Baru</button>` : ''}`})}
       <div id="list-kpis"></div>
@@ -739,9 +763,11 @@
     },
   };
 
-  function renderFormField(f){
+  function renderFormField(f, prefill){
     const req = f.required ? '<span class="req"> *</span>' : '';
-    const defVal = typeof f.default === 'function' ? f.default() : (f.default!=null ? f.default : '');
+    const pre = prefill && prefill[f.key] != null ? prefill[f.key] : null;
+    const defVal = pre != null ? pre
+      : (typeof f.default === 'function' ? f.default() : (f.default!=null ? f.default : ''));
     let control = '';
     if(f.type==='select'){
       const opts = typeof f.options==='function' ? f.options() : (f.options||[]);
@@ -767,10 +793,10 @@
     return el ? el.value : '';
   }
 
-  function openAddForm(kind){
+  function openAddForm(kind, prefill){
     const cfg = FORM_CONFIGS[kind];
     if(!cfg){ toast('Form tambah data untuk modul ini belum tersedia pada purwarupa.'); return; }
-    const fieldsHtml = cfg.fields.map(renderFormField).join('');
+    const fieldsHtml = cfg.fields.map(f=> renderFormField(f, prefill)).join('');
     openDrawer(`
       <div class="drawer-head">
         <div><h2>${esc(cfg.title)}</h2><div class="meta">Data tersimpan pada sesi/browser ini (localStorage) — bukan basis data produksi</div></div>
@@ -1339,7 +1365,7 @@
     D.assets.forEach(a=> assetsByCategory[a.category]=(assetsByCategory[a.category]||0)+1);
 
     qs('#content').innerHTML = `
-      ${pageHead({title:'Master Data', desc:MODULES['master-data'].desc, actions:`<button class="btn btn-primary btn-sm" id="new-location">${icon('plus')}Tambah Lokasi</button>`})}
+      ${pageHead({title:'Master Data', desc:MODULES['master-data'].desc, actions: canWrite('master-data') ? `<button class="btn btn-primary btn-sm" id="new-location">${icon('plus')}Tambah Lokasi</button>` : readOnlyBadge()})}
       <div class="module-hint">${icon('info')}<span>Master Data adalah fondasi referensi seluruh transaksi — organisasi, lokasi, kategori, vendor dan parameter workflow. Perubahan pada modul ini memengaruhi seluruh modul operasional.</span></div>
 
       <div class="grid-3" style="margin-bottom:18px">
@@ -1374,7 +1400,7 @@
         </div>
       </div>
     `;
-    qs('#new-location').addEventListener('click', ()=> openAddForm('master-location'));
+    const _b_new_location = qs('#new-location'); if(_b_new_location) _b_new_location.addEventListener('click', ()=> openAddForm('master-location'));
   }
 
   function renderLifecycle(){
@@ -1429,7 +1455,7 @@
     ];
 
     qs('#content').innerHTML = `
-      ${pageHead({title:'Sensus & Inventarisasi', desc:MODULES['sensus'].desc, actions:`<button class="btn btn-primary btn-sm" id="new-sensus">${icon('plus')}Buat Rencana Sensus</button>`})}
+      ${pageHead({title:'Sensus & Inventarisasi', desc:MODULES['sensus'].desc, actions: canWrite('sensus') ? `<button class="btn btn-primary btn-sm" id="new-sensus">${icon('plus')}Buat Rencana Sensus</button>` : readOnlyBadge()})}
       ${kpiCardsHtml(kpis)}
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-head"><h3>Rencana Sensus</h3><div class="sub">Klik baris untuk melihat detail hasil scan</div></div>
@@ -1462,7 +1488,7 @@
         </table></div>
       </div>
     `;
-    qs('#new-sensus').addEventListener('click', ()=> openAddForm('sensus-plan'));
+    const _b_new_sensus = qs('#new-sensus'); if(_b_new_sensus) _b_new_sensus.addEventListener('click', ()=> openAddForm('sensus-plan'));
     qs('#sensus-body').querySelectorAll('tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>{
         const plan = plans.find(p=>p.sensus_id===tr.dataset.id);
@@ -1499,7 +1525,7 @@
     ];
 
     qs('#content').innerHTML = `
-      ${pageHead({title:'SAKTI/SIMAN Reconciliation', desc:MODULES['reconciliation'].desc, actions:`<button class="btn btn-primary btn-sm" id="new-batch">${icon('plus')}Tambah Batch Baru</button>`})}
+      ${pageHead({title:'SAKTI/SIMAN Reconciliation', desc:MODULES['reconciliation'].desc, actions: canWrite('reconciliation') ? `<button class="btn btn-primary btn-sm" id="new-batch">${icon('plus')}Tambah Batch Baru</button>` : readOnlyBadge()})}
       ${kpiCardsHtml(kpis)}
       <div class="panel">
         <div class="panel-head"><h3>Batch Rekonsiliasi</h3><div class="sub">Klik baris untuk melihat detail item &amp; exception</div></div>
@@ -1519,7 +1545,7 @@
         </table></div>
       </div>
     `;
-    qs('#new-batch').addEventListener('click', ()=> openAddForm('recon-batch'));
+    const _b_new_batch = qs('#new-batch'); if(_b_new_batch) _b_new_batch.addEventListener('click', ()=> openAddForm('recon-batch'));
     qs('#recon-body').querySelectorAll('tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>{
         const batch = batches.find(b=>b.batch_id===tr.dataset.id);
@@ -1555,7 +1581,7 @@
       {label:'Access Log Tercatat', value: D.access_logs.length, icon:'clipList', tint:'gold'},
     ];
     qs('#content').innerHTML = `
-      ${pageHead({title:'Cyber Asset Management', desc:MODULES['cyber'].desc, actions:`<button class="btn btn-primary btn-sm" id="new-cyber-asset">${icon('plus')}Tambah Aset Siber</button>`})}
+      ${pageHead({title:'Cyber Asset Management', desc:MODULES['cyber'].desc, actions: canWrite('cyber') ? `<button class="btn btn-primary btn-sm" id="new-cyber-asset">${icon('plus')}Tambah Aset Siber</button>` : readOnlyBadge()})}
       ${kpiCardsHtml(kpis)}
       <div class="module-hint">${icon('shield')}<span>SIMASET hanya menyimpan metadata manajemen aset siber; secret dan cryptographic key material tidak disimpan pada sistem ini.</span></div>
       <div class="panel" style="margin-bottom:16px">
@@ -1579,7 +1605,7 @@
         </table></div>
       </div>
     `;
-    qs('#new-cyber-asset').addEventListener('click', ()=> openAddForm('cyber-asset'));
+    const _b_new_cyber_asset = qs('#new-cyber-asset'); if(_b_new_cyber_asset) _b_new_cyber_asset.addEventListener('click', ()=> openAddForm('cyber-asset'));
     qs('#cyber-body').querySelectorAll('tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>{
         const ca = cyberAssets.find(c=>c.cyber_asset_id===tr.dataset.id);
@@ -1656,7 +1682,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h3>Continual Improvement Register</h3>
-            <button class="btn btn-outline btn-sm" id="new-improvement">${icon('plus')}Tambah</button>
+            ${canWrite('governance') ? `<button class="btn btn-outline btn-sm" id="new-improvement">${icon('plus')}Tambah</button>` : ''}
           </div>
           <div class="table-wrap"><table class="data-table">
             <thead><tr><th>ID</th><th>Improvement</th><th>Terhubung</th><th>Status</th></tr></thead>
@@ -1665,14 +1691,466 @@
         </div>
       </div>
     `;
-    qs('#new-improvement').addEventListener('click', ()=> openAddForm('governance-improvement'));
+    const _b_new_improvement = qs('#new-improvement'); if(_b_new_improvement) _b_new_improvement.addEventListener('click', ()=> openAddForm('governance-improvement'));
+  }
+
+  // =============================================================================
+  // MODUL: IoT & TELEMETRY
+  // =============================================================================
+  const IOT_SEV_CLS = { 'Critical':'b-red', 'High':'b-red', 'Medium':'b-amber', 'Low':'b-blue' };
+  const IOT_STATUS_CLS = { 'Online':'b-green', 'Warning':'b-amber', 'Offline':'b-red' };
+
+  function iotSeries(dev, n){
+    // Deret telemetry awal di sekitar nilai terakhir (simulasi gateway)
+    const base = Number(dev.last_value) || 0;
+    const span = Math.max(Math.abs(base) * 0.08, 1);
+    const out = [];
+    for(let i=0;i<n;i++) out.push(+(base + (Math.random()-0.5)*span*2).toFixed(1));
+    out[n-1] = base;
+    return out;
+  }
+
+  function renderIoT(){
+    const devs = D.iot_devices || [];
+    const alerts = D.iot_alerts || [];
+    const online = devs.filter(d=>d.status==='Online').length;
+    const warn = devs.filter(d=>d.status==='Warning').length;
+    const off = devs.filter(d=>d.status==='Offline').length;
+    const openAlerts = alerts.filter(a=>a.status==='Terbuka' || a.status==='Diproses');
+    const writable = canWrite('iot');
+
+    const kpis = [
+      {label:'Perangkat Terhubung', value:`${online}/${devs.length}`, icon:'cpu', tint:'blue'},
+      {label:'Perangkat Peringatan', value:warn, icon:'alertTriangle', tint:'gold'},
+      {label:'Perangkat Offline', value:off, icon:'alertCircle', tint:'red'},
+      {label:'Alarm Aktif', value:openAlerts.length, icon:'bell', tint:'violet'},
+    ];
+
+    const firstDev = devs[0];
+    qs('#content').innerHTML = `
+      ${pageHead({title:'IoT & Telemetry', desc:MODULES['iot'].desc, actions:`
+        ${writable?'':readOnlyBadge()}
+        <button class="btn btn-outline btn-sm" id="iot-export">${icon('download')}Ekspor CSV</button>
+        ${writable?`<button class="btn btn-primary btn-sm" id="iot-sync">${icon('refresh')}Tarik Data Gateway</button>`:''}`})}
+      <div class="module-hint">${icon('info')}<span>Telemetry diterima dari IoT Gateway melalui protokol MQTT, LoRaWAN dan HTTP. Nilai yang melewati ambang batas otomatis membangkitkan alarm dan dapat ditindaklanjuti menjadi Work Order pada modul Maintenance.</span></div>
+      ${kpiCardsHtml(kpis)}
+
+      <div class="grid-2" style="margin-top:18px">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Telemetry Langsung</h3>
+            <select class="input" id="iot-dev-select" style="max-width:260px">
+              ${devs.map(d=>`<option value="${esc(d.device_id)}">${esc(d.device_id)} — ${esc(d.asset_name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="panel-body">
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+              <span id="iot-live-value" style="font-size:30px;font-weight:800;color:var(--text-900)">–</span>
+              <span id="iot-live-unit" style="font-size:13px;color:var(--text-500)"></span>
+              <span id="iot-live-state" style="margin-left:auto"></span>
+            </div>
+            <div style="height:190px"><canvas id="chart-iot"></canvas></div>
+            <div id="iot-live-meta" style="margin-top:10px;font-size:11.5px;color:var(--text-500)"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Alarm Telemetry</h3><span class="filter-count">${openAlerts.length} aktif</span></div>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>ID</th><th>Aset</th><th>Nilai</th><th>Severity</th><th>Status</th>${writable?'<th></th>':''}</tr></thead>
+            <tbody>${alerts.map(a=>`
+              <tr>
+                <td class="cell-mono">${esc(a.alert_id)}</td>
+                <td class="cell-strong">${esc(a.asset_name)}<div class="cell-muted" style="font-size:11px">${esc(a.metric)} · ambang ${esc(a.threshold)}</div></td>
+                <td class="cell-mono">${esc(a.value)}</td>
+                <td>${badgeHtml(a.severity, IOT_SEV_CLS[a.severity]||'b-slate')}</td>
+                <td>${badgeHtml(a.status, badgeClassFor('status', a.status))}</td>
+                ${writable?`<td style="text-align:right">${(a.status==='Terbuka')?`<button class="btn btn-outline btn-sm iot-wo" data-alert="${esc(a.alert_id)}">${icon('wrench')}Buat WO</button>`:''}</td>`:''}
+              </tr>`).join('')}</tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:18px">
+        <div class="panel-head"><h3>Registrasi Perangkat IoT</h3><span class="filter-count">${devs.length} perangkat</span></div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Device ID</th><th>Aset Terpantau</th><th>Jenis Sensor</th><th>Protokol</th><th>Metrik</th><th>Nilai Terakhir</th><th>Ambang Batas</th><th>Baterai</th><th>Status</th><th>Terakhir Lapor</th></tr></thead>
+          <tbody>${devs.map(d=>`
+            <tr>
+              <td class="cell-mono">${esc(d.device_id)}</td>
+              <td class="cell-strong">${esc(d.asset_name)}<div class="cell-muted" style="font-size:11px">${esc(d.asset_id)}</div></td>
+              <td>${esc(d.device_type)}</td>
+              <td><span class="badge b-slate">${esc(d.protocol)}</span></td>
+              <td>${esc(d.metric)}</td>
+              <td class="cell-mono" data-devval="${esc(d.device_id)}">${esc(d.last_value)} ${esc(d.unit)}</td>
+              <td class="cell-muted">${d.threshold_max?`maks ${esc(d.threshold_max)}`:''}${(d.threshold_min&&d.threshold_max)?' · ':''}${d.threshold_min?`min ${esc(d.threshold_min)}`:''}</td>
+              <td>${esc(d.battery)}%</td>
+              <td>${badgeHtml(d.status, IOT_STATUS_CLS[d.status]||'b-slate')}</td>
+              <td class="cell-muted">${esc(d.last_seen)}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
+
+    // --- Telemetry chart + simulasi aliran data ---
+    let chart = null, series = [], labels = [], currentDev = firstDev;
+    function labelsFor(n){
+      const out = [];
+      const now = new Date();
+      for(let i=n-1;i>=0;i--){
+        const t = new Date(now.getTime() - i*60000);
+        out.push(String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'));
+      }
+      return out;
+    }
+    function paintLive(dev, val){
+      qs('#iot-live-value').textContent = val;
+      qs('#iot-live-unit').textContent = dev.unit || '';
+      const over = (dev.threshold_max && val > dev.threshold_max) || (dev.threshold_min && dev.metric!=='Status Tamper' && val < dev.threshold_min);
+      qs('#iot-live-state').innerHTML = dev.status==='Offline'
+        ? badgeHtml('Tidak Ada Sinyal','b-red')
+        : (over ? badgeHtml('Melewati Ambang Batas','b-amber') : badgeHtml('Dalam Batas Normal','b-green'));
+      qs('#iot-live-meta').innerHTML = `${esc(dev.device_type)} · protokol ${esc(dev.protocol)} · interval ${esc(dev.interval_menit)} menit · firmware ${esc(dev.firmware)} · ${esc(dev.location_label)}`;
+      const cell = qs(`[data-devval="${dev.device_id}"]`);
+      if(cell) cell.textContent = `${val} ${dev.unit||''}`;
+    }
+    function selectDevice(id){
+      currentDev = devs.find(d=>d.device_id===id) || devs[0];
+      if(!currentDev) return;
+      series = iotSeries(currentDev, 20);
+      labels = labelsFor(20);
+      if(chart){ chart.destroy(); activeCharts = activeCharts.filter(c=>c!==chart); }
+      chart = makeChart(qs('#chart-iot'), {
+        type:'line',
+        data:{ labels, datasets:[
+          { label:currentDev.metric, data:series, borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.35, pointRadius:0, borderWidth:2 },
+          ...(currentDev.threshold_max ? [{ label:'Ambang Maks', data:labels.map(()=>currentDev.threshold_max), borderColor:'#dc2626', borderDash:[6,4], pointRadius:0, borderWidth:1.5, fill:false }] : []),
+        ]},
+        options:{ plugins:{legend:{display:true, position:'bottom', labels:{boxWidth:9, font:{size:10}}}}, maintainAspectRatio:false,
+          scales:{ x:{ ticks:{ maxTicksLimit:6, font:{size:9.5} } }, y:{ beginAtZero:false, ticks:{ font:{size:9.5} } } } }
+      });
+      paintLive(currentDev, series[series.length-1]);
+    }
+    if(firstDev){
+      selectDevice(firstDev.device_id);
+      qs('#iot-dev-select').addEventListener('change', e=> selectDevice(e.target.value));
+      // Simulasi paket telemetry berikutnya setiap 3 detik
+      addTimer(setInterval(()=>{
+        if(!chart || !currentDev || currentDev.status==='Offline') return;
+        const base = Number(currentDev.last_value)||0;
+        const span = Math.max(Math.abs(base)*0.05, 0.8);
+        const next = +(base + (Math.random()-0.45)*span*2).toFixed(1);
+        series.push(next); series.shift();
+        labels.push(labelsFor(1)[0]); labels.shift();
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = series;
+        if(chart.data.datasets[1]) chart.data.datasets[1].data = labels.map(()=>currentDev.threshold_max);
+        chart.update('none');
+        paintLive(currentDev, next);
+      }, 3000));
+    }
+
+    qs('#iot-export').addEventListener('click', ()=> exportCSV('iot-devices',
+      [{key:'device_id',label:'Device ID'},{key:'asset_id',label:'Asset ID'},{key:'asset_name',label:'Nama Aset'},
+       {key:'device_type',label:'Jenis Sensor'},{key:'protocol',label:'Protokol'},{key:'metric',label:'Metrik'},
+       {key:'last_value',label:'Nilai Terakhir'},{key:'unit',label:'Satuan'},{key:'status',label:'Status'},
+       {key:'last_seen',label:'Terakhir Lapor'}], devs));
+    const syncBtn = qs('#iot-sync');
+    if(syncBtn) syncBtn.addEventListener('click', ()=> toast('Permintaan tarik data dikirim ke IoT Gateway — 10 perangkat melapor.'));
+    document.querySelectorAll('.iot-wo').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const a = alerts.find(x=>x.alert_id===b.dataset.alert);
+        if(!a) return;
+        if(!canWrite('maintenance')){
+          toast(`Alarm ${a.alert_id} diteruskan ke tim Maintenance untuk pembuatan Work Order.`);
+          return;
+        }
+        openAddForm('maintenance', { asset_id:a.asset_id, problem:`[IoT ${a.alert_id}] ${a.metric} ${a.value} melewati ambang ${a.threshold}`, priority:a.severity==='Critical'?'Critical':'High' });
+      });
+    });
+  }
+
+  // =============================================================================
+  // MODUL: INTEGRASI SISTEM
+  // =============================================================================
+  function renderIntegrasi(){
+    const ints = D.integrations || [];
+    const logs = D.sync_logs || [];
+    const aktif = ints.filter(i=>i.status==='Aktif').length;
+    const perhatian = ints.filter(i=>i.health!=='Sehat').length;
+    const writable = canWrite('integrasi');
+
+    const kpis = [
+      {label:'Titik Integrasi', value:ints.length, icon:'refresh', tint:'blue'},
+      {label:'Koneksi Aktif', value:aktif, icon:'checkCircle', tint:'green'},
+      {label:'Perlu Perhatian', value:perhatian, icon:'alertTriangle', tint:'gold'},
+      {label:'Sinkronisasi 7 Hari', value:logs.length, icon:'activity', tint:'violet'},
+    ];
+
+    qs('#content').innerHTML = `
+      ${pageHead({title:'Integrasi Sistem', desc:MODULES['integrasi'].desc, actions:`
+        ${writable?'':readOnlyBadge()}
+        <button class="btn btn-outline btn-sm" id="int-export">${icon('download')}Ekspor CSV</button>
+        ${writable?`<button class="btn btn-primary btn-sm" id="int-sync">${icon('refresh')}Jalankan Sinkronisasi</button>`:''}`})}
+      <div class="module-hint">${icon('info')}<span>SIMASET BMN berperan sebagai Book of Record operasional-teknis. SAKTI/SIMAN tetap menjadi Book of Record legal-finansial; integrasi tahap awal menggunakan batch CSV/Excel dan dikembangkan ke API resmi bila tersedia.</span></div>
+      ${kpiCardsHtml(kpis)}
+
+      <div class="grid-3" style="margin-top:18px">
+        ${ints.map(i=>`
+          <div class="panel" style="margin:0">
+            <div class="panel-body">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <div class="kpi-icon tint-${i.health==='Sehat'?'green':'gold'}" style="width:34px;height:34px">${icon(i.system.indexOf('IoT')>=0?'cpu':i.system.indexOf('Mobile')>=0?'qrcode':'database')}</div>
+                <div style="min-width:0">
+                  <div style="font-weight:700;font-size:13px;color:var(--text-900)">${esc(i.system)}</div>
+                  <div style="font-size:11px;color:var(--text-500)">${esc(i.arah)} · ${esc(i.mechanism)}</div>
+                </div>
+                <span style="margin-left:auto">${badgeHtml(i.status, i.status==='Aktif'?'b-green':i.status==='Terbatas'?'b-amber':'b-slate')}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text-600);margin-bottom:10px">${esc(i.data_desc)}</div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-500);border-top:1px solid var(--border);padding-top:8px">
+                <span>Terakhir: <b style="color:var(--text-700)">${esc(i.last_sync)}</b></span>
+                <span>${esc(i.records)} record</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-500);margin-top:4px">Berikutnya: ${esc(i.next_sync)}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <div class="panel" style="margin-top:18px">
+        <div class="panel-head"><h3>Riwayat Sinkronisasi</h3><span class="filter-count">${logs.length} catatan</span></div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>ID</th><th>Sistem</th><th>Mulai</th><th>Durasi</th><th>Record</th><th>Hasil</th><th>Catatan</th></tr></thead>
+          <tbody>${logs.map(l=>`
+            <tr>
+              <td class="cell-mono">${esc(l.log_id)}</td>
+              <td class="cell-strong">${esc(l.system)}</td>
+              <td class="cell-muted">${esc(l.started_at)}</td>
+              <td>${esc(l.duration)}</td>
+              <td class="cell-mono">${esc(l.records)}</td>
+              <td>${badgeHtml(l.result, l.result==='Berhasil'?'b-green':l.result==='Sebagian'?'b-amber':'b-red')}</td>
+              <td class="cell-muted">${esc(l.note)}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
+
+    qs('#int-export').addEventListener('click', ()=> exportCSV('integrasi-sistem',
+      [{key:'system',label:'Sistem'},{key:'arah',label:'Arah'},{key:'mechanism',label:'Mekanisme'},
+       {key:'status',label:'Status'},{key:'last_sync',label:'Sinkronisasi Terakhir'},{key:'next_sync',label:'Berikutnya'},
+       {key:'records',label:'Jumlah Record'},{key:'health',label:'Kesehatan'}], ints));
+    const b = qs('#int-sync');
+    if(b) b.addEventListener('click', ()=> toast('Sinkronisasi dijalankan untuk 6 koneksi aktif — Procurement dilewati (kredensial kedaluwarsa).'));
+  }
+
+  // =============================================================================
+  // MODUL: PERSETUJUAN (APPROVAL INBOX)
+  // =============================================================================
+  const APV_KEY = 'simaset_approvals_v1';
+  function loadApprovalDecisions(){
+    try{ return JSON.parse(localStorage.getItem(APV_KEY)) || {}; }catch(e){ return {}; }
+  }
+  function saveApprovalDecision(id, status){
+    const all = loadApprovalDecisions();
+    all[id] = { status, by:CURRENT_USER.name, role:CURRENT_USER.role, at:todayStr() };
+    try{ localStorage.setItem(APV_KEY, JSON.stringify(all)); }catch(e){}
+  }
+  function approvalStatus(a, decisions){
+    return decisions[a.approval_id] ? decisions[a.approval_id].status : a.status;
+  }
+
+  function renderApproval(){
+    const decisions = loadApprovalDecisions();
+    const all = (D.approvals || []).map(a=>({ ...a, _status: approvalStatus(a, decisions), _dec: decisions[a.approval_id] }));
+    // Antrean milik peran ini: item yang mensyaratkan peran tersebut dan
+    // modul terkaitnya memang berkewenangan approve.
+    const mine = all.filter(a=> a.role_required===ROLE && canApprove(a.modul));
+    const mineOpen = mine.filter(a=> a._status==='Menunggu');
+    const others = all.filter(a=> !(a.role_required===ROLE && canApprove(a.modul)));
+
+    const kpis = [
+      {label:'Menunggu Persetujuan Anda', value:mineOpen.length, icon:'clipcheck', tint:'gold'},
+      {label:'Total Antrean Peran Anda', value:mine.length, icon:'clipList', tint:'blue'},
+      {label:'Antrean Peran Lain', value:others.length, icon:'users', tint:'violet'},
+      {label:'Kewenangan Approve', value:RBAC.countByLevel(ROLE).A + ' modul', icon:'userCheck', tint:'green'},
+    ];
+
+    const rowHtml = (a, actionable)=>`
+      <tr>
+        <td class="cell-mono">${esc(a.approval_id)}</td>
+        <td class="cell-strong">${esc(a.judul)}<div class="cell-muted" style="font-size:11px">${esc(a.jenis)} · ${esc(a.object_id)} · ${esc(a.catatan)}</div></td>
+        <td class="cell-muted">${esc(a.requested_by)}<div style="font-size:11px">${esc(a.requested_at)}</div></td>
+        <td class="cell-mono">${esc(a.nilai)}</td>
+        <td><span class="badge b-slate">${esc(a.role_required)}</span></td>
+        <td>${badgeHtml(a._status, a._status==='Disetujui'?'b-green':a._status==='Ditolak'?'b-red':'b-amber')}
+            ${a._dec?`<div class="cell-muted" style="font-size:10.5px;margin-top:3px">oleh ${esc(a._dec.by)} · ${esc(a._dec.at)}</div>`:''}</td>
+        <td style="text-align:right;white-space:nowrap">
+          ${actionable && a._status==='Menunggu' ? `
+            <button class="btn btn-primary btn-sm apv-ok" data-id="${esc(a.approval_id)}">${icon('checkCircle')}Setujui</button>
+            <button class="btn btn-outline btn-sm apv-no" data-id="${esc(a.approval_id)}">${icon('x')}Tolak</button>` : ''}
+        </td>
+      </tr>`;
+
+    qs('#content').innerHTML = `
+      ${pageHead({title:'Persetujuan Saya', desc:MODULES['approval'].desc, actions:
+        canApprove('approval') ? `<span class="badge b-amber" style="padding:6px 12px;font-size:12px">${icon('userCheck')}Peran dengan Kewenangan Persetujuan</span>` : readOnlyBadge()})}
+      <div class="module-hint">${icon('info')}<span>Antrean ditentukan oleh matriks hak akses: sebuah transaksi hanya dapat disetujui oleh peran yang memiliki level <b>A</b> pada modul terkait. Peran <b>${esc(ROLE)}</b> memiliki kewenangan persetujuan pada ${RBAC.countByLevel(ROLE).A} modul.</span></div>
+      ${kpiCardsHtml(kpis)}
+
+      <div class="panel" style="margin-top:18px">
+        <div class="panel-head"><h3>Menunggu Persetujuan Anda</h3><span class="filter-count">${mine.length} item</span></div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>ID</th><th>Transaksi</th><th>Diajukan</th><th>Nilai</th><th>Kewenangan</th><th>Status</th><th></th></tr></thead>
+          <tbody>${mine.length ? mine.map(a=>rowHtml(a,true)).join('')
+            : `<tr><td colspan="7" style="text-align:center;padding:26px;color:var(--text-500)">Tidak ada transaksi yang menunggu persetujuan peran ${esc(ROLE)}.</td></tr>`}</tbody>
+        </table></div>
+      </div>
+
+      <div class="panel" style="margin-top:18px">
+        <div class="panel-head"><h3>Antrean Peran Lain</h3><span class="filter-count">hanya dapat dilihat</span></div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>ID</th><th>Transaksi</th><th>Diajukan</th><th>Nilai</th><th>Kewenangan</th><th>Status</th><th></th></tr></thead>
+          <tbody>${others.map(a=>rowHtml(a,false)).join('')}</tbody>
+        </table></div>
+      </div>`;
+
+    document.querySelectorAll('.apv-ok').forEach(b=> b.addEventListener('click', ()=>{
+      saveApprovalDecision(b.dataset.id, 'Disetujui');
+      toast(`${b.dataset.id} disetujui oleh ${CURRENT_USER.name} (${ROLE}).`);
+      renderApproval();
+    }));
+    document.querySelectorAll('.apv-no').forEach(b=> b.addEventListener('click', ()=>{
+      saveApprovalDecision(b.dataset.id, 'Ditolak');
+      toast(`${b.dataset.id} ditolak oleh ${CURRENT_USER.name} (${ROLE}).`);
+      renderApproval();
+    }));
+  }
+
+  // =============================================================================
+  // MODUL: HAK AKSES & PERAN
+  // =============================================================================
+  function renderAccess(){
+    const counts = RBAC.countByLevel(ROLE);
+    const modulesOf = (lvl)=> RBAC_MODULES.filter(m=> RBAC.level(ROLE,m)===lvl);
+    const titleOf = (m)=> m==='dashboard' ? 'Dashboard Eksekutif' : (MODULES[m] ? MODULES[m].title : m);
+
+    const kpis = [
+      {label:'Modul Dapat Diakses', value:`${counts.R+counts.RW+counts.A}/${RBAC_MODULES.length}`, icon:'userCheck', tint:'blue'},
+      {label:'Lihat Saja', value:counts.R, icon:'eye', tint:'violet'},
+      {label:'Lihat + Ubah', value:counts.RW, icon:'plus', tint:'green'},
+      {label:'Dapat Menyetujui', value:counts.A, icon:'clipcheck', tint:'gold'},
+    ];
+
+    const roles = RBAC.roleNames();
+    const matrixRows = RBAC_MODULES.map(m=>`
+      <tr>
+        <td class="cell-strong" style="white-space:nowrap">${esc(titleOf(m))}</td>
+        ${roles.map(r=>{
+          const l = RBAC.level(r, m);
+          const info = RBAC.levelLabel(l);
+          const isMe = r===ROLE;
+          return `<td style="text-align:center${isMe?';background:var(--blue-50)':''}">
+            ${l==='-' ? `<span style="color:var(--text-400)">–</span>` : `<span class="badge ${info.cls}" style="font-size:10.5px;padding:3px 7px">${l}</span>`}
+          </td>`;
+        }).join('')}
+      </tr>`).join('');
+
+    qs('#content').innerHTML = `
+      ${pageHead({title:'Hak Akses & Peran', desc:MODULES['access'].desc, actions:`<button class="btn btn-outline btn-sm" id="acc-export">${icon('download')}Ekspor Matriks</button>`})}
+
+      <div class="panel" style="margin-bottom:18px">
+        <div class="panel-body" style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+          <div class="kpi-icon tint-blue" style="width:46px;height:46px;flex:none">${icon('userCheck')}</div>
+          <div style="flex:1;min-width:260px">
+            <div style="font-size:16px;font-weight:800;color:var(--text-900)">${esc(CURRENT_USER.name)} — ${esc(ROLE)}</div>
+            <p class="desc" style="margin:6px 0 0">${esc(RBAC.describe(ROLE))}</p>
+          </div>
+        </div>
+      </div>
+
+      ${kpiCardsHtml(kpis)}
+
+      <div class="grid-3" style="margin-top:18px">
+        ${[['A','Dapat Menyetujui','gold'],['RW','Lihat + Ubah','green'],['R','Lihat Saja','violet']].map(([lvl,label,tint])=>`
+          <div class="panel" style="margin:0">
+            <div class="panel-head"><h3>${label}</h3><span class="filter-count">${modulesOf(lvl).length} modul</span></div>
+            <div class="panel-body">
+              ${modulesOf(lvl).length ? `<div class="thumb-row" style="gap:6px;flex-wrap:wrap">
+                ${modulesOf(lvl).map(m=>`<span class="badge ${RBAC.levelLabel(lvl).cls}" style="padding:5px 10px;font-size:11.5px">${esc(titleOf(m))}</span>`).join('')}
+              </div>` : `<div style="color:var(--text-500);font-size:12px">Tidak ada modul pada tingkat ini.</div>`}
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <div class="panel" style="margin-top:18px">
+        <div class="panel-head">
+          <h3>Matriks Peran × Modul</h3>
+          <span class="filter-count">R = Lihat · RW = Lihat + Ubah · A = Lihat + Ubah + Setujui</span>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th style="white-space:nowrap">Modul</th>${roles.map(r=>`<th style="text-align:center;font-size:10.5px${r===ROLE?';color:var(--blue-600)':''}">${esc(ROLE_DEFS[r].short)}</th>`).join('')}</tr></thead>
+          <tbody>${matrixRows}</tbody>
+        </table></div>
+        <div class="panel-body" style="border-top:1px solid var(--border);font-size:11.5px;color:var(--text-500)">
+          Kolom bertanda biru adalah peran Anda saat ini. Menu pada sidebar hanya menampilkan modul yang tercantum pada kolom tersebut.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:18px">
+        <div class="panel-head"><h3>Definisi Peran Pengguna</h3><span class="filter-count">${roles.length} peran</span></div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Peran</th><th>Cakupan Kewenangan</th><th style="text-align:center">Modul</th><th style="text-align:center">Approve</th></tr></thead>
+          <tbody>${roles.map(r=>{
+            const c = RBAC.countByLevel(r);
+            return `<tr${r===ROLE?' style="background:var(--blue-50)"':''}>
+              <td class="cell-strong" style="white-space:nowrap">${esc(r)}${r===ROLE?' <span class="badge b-blue" style="font-size:10px;padding:2px 6px">Anda</span>':''}</td>
+              <td class="cell-muted">${esc(RBAC.describe(r))}</td>
+              <td style="text-align:center" class="cell-mono">${c.R+c.RW+c.A}</td>
+              <td style="text-align:center" class="cell-mono">${c.A}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>
+      </div>`;
+
+    qs('#acc-export').addEventListener('click', ()=>{
+      const rows = RBAC_MODULES.map(m=>{
+        const o = { modul: titleOf(m) };
+        roles.forEach(r=> o[r] = RBAC.level(r,m));
+        return o;
+      });
+      exportCSV('matriks-hak-akses',
+        [{key:'modul',label:'Modul'}, ...roles.map(r=>({key:r,label:r}))], rows);
+    });
   }
 
   // =============================================================================
   // ROUTER
   // =============================================================================
+  function renderDenied(moduleId){
+    const cfg = MODULES[moduleId];
+    const allowed = RBAC.allowedModules(ROLE).filter(m=>m!=='dashboard' && m!=='access');
+    qs('#content').innerHTML = `
+      ${pageHead({title:'Akses Ditolak', desc:`Peran ${CURRENT_USER.role} tidak memiliki kewenangan atas modul ini.`})}
+      <div class="panel">
+        <div class="panel-body" style="text-align:center;padding:46px 24px">
+          <div class="kpi-icon tint-red" style="margin:0 auto 14px;width:52px;height:52px">${icon('lock')}</div>
+          <h3 style="margin:0 0 8px;font-size:17px;color:var(--text-900)">${esc(cfg ? cfg.title : moduleId)}</h3>
+          <p class="desc" style="max-width:560px;margin:0 auto 18px">
+            Modul ini tidak termasuk dalam kewenangan peran <b>${esc(CURRENT_USER.role)}</b>.
+            ${esc(RBAC.describe(ROLE))}
+          </p>
+          <div class="thumb-row" style="justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+            ${allowed.slice(0,8).map(m=>`<span class="badge b-slate" style="padding:6px 12px;font-size:12px">${esc(MODULES[m]?MODULES[m].title:m)}</span>`).join('')}
+            ${allowed.length>8?`<span class="badge b-slate" style="padding:6px 12px;font-size:12px">+${allowed.length-8} modul lain</span>`:''}
+          </div>
+          <button class="btn btn-primary btn-sm" id="denied-back">${icon('dashboard')}Kembali ke Dashboard</button>
+          <button class="btn btn-ghost btn-sm" id="denied-access">${icon('userCheck')}Lihat Hak Akses Saya</button>
+        </div>
+      </div>`;
+    qs('#denied-back').addEventListener('click', ()=> window.location.hash='#/dashboard');
+    qs('#denied-access').addEventListener('click', ()=> window.location.hash='#/access');
+  }
+
   function route(){
     destroyCharts();
+    clearTimers();
     closeDrawer();
     document.querySelectorAll('.report-overlay, .tag-print-overlay').forEach(el=> el.remove());
     const hash = window.location.hash.replace(/^#\//,'') || 'dashboard';
@@ -1683,12 +2161,20 @@
     const cfg = MODULES[hash];
     if(!cfg){ renderDashboard(); window.location.hash = '#/dashboard'; return; }
 
+    // Guard hak akses: modul di luar kewenangan peran tidak dapat dibuka,
+    // termasuk bila URL hash diketik manual.
+    if(!canRead(hash)) return renderDenied(hash);
+
     if(cfg.custom==='master-data') return renderMasterData();
     if(cfg.custom==='lifecycle') return renderLifecycle();
     if(cfg.custom==='sensus') return renderSensus();
     if(cfg.custom==='reconciliation') return renderReconciliation();
     if(cfg.custom==='cyber') return renderCyber();
     if(cfg.custom==='governance') return renderGovernance();
+    if(cfg.custom==='iot') return renderIoT();
+    if(cfg.custom==='integrasi') return renderIntegrasi();
+    if(cfg.custom==='approval') return renderApproval();
+    if(cfg.custom==='access') return renderAccess();
 
     mountListPage(cfg, { moduleId: hash });
   }

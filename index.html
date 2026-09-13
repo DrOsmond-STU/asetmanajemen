@@ -90,6 +90,7 @@
 
 <script src="assets/js/icons.js"></script>
 <script src="assets/js/data.js"></script>
+<script src="assets/js/rbac.js"></script>
 <script>
   document.getElementById('icon-mail-slot').innerHTML = icon('mail','');
   document.getElementById('icon-lock-slot').innerHTML = icon('lock','');
@@ -110,7 +111,11 @@
   SIMASET_DATA.demo_users.forEach(u=>{
     const el = document.createElement('div');
     el.className='demo-chip';
-    el.innerHTML = `<b>${u.role}</b><span>${u.email}</span>`;
+    // Ringkasan hak akses peran agar terlihat sebelum masuk
+    const c = RBAC.countByLevel(u.role);
+    const total = c.R + c.RW + c.A;
+    el.innerHTML = `<b>${u.role}</b><span>${u.email}</span>`
+      + `<span class="demo-perm">${total} modul${c.A?` · ${c.A} dapat disetujui`:''}</span>`;
     el.addEventListener('click', ()=>{
       document.getElementById('email').value = u.email;
       document.getElementById('password').value = u.password;

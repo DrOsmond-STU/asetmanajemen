@@ -12,6 +12,7 @@ const NAV_GROUPS = [
   { id:'siber', label:'Keamanan Siber' },
   { id:'governance', label:'Governance & Audit' },
   { id:'laporan', label:'Pelaporan' },
+  { id:'sistem', label:'Integrasi & Sistem' },
 ];
 
 // Friendly labels for generic definition-grid rendering
@@ -484,6 +485,30 @@ const MODULES = {
     ],
     isReports:true,
     detailIsReport:true,
+  },
+
+  'iot': {
+    group:'pemeliharaan', title:'IoT & Telemetry', icon:'cpu',
+    desc:'Pemantauan kondisi aset kritikal secara langsung melalui sensor IoT, ambang batas dan alarm otomatis.',
+    custom:'iot',
+  },
+
+  'integrasi': {
+    group:'sistem', title:'Integrasi Sistem', icon:'refresh',
+    desc:'Status koneksi dan riwayat sinkronisasi dengan SAKTI/SIMAN, HR, Finance, Procurement, DMS, Mobile dan IoT Gateway.',
+    custom:'integrasi',
+  },
+
+  'approval': {
+    group:'utama', title:'Persetujuan Saya', icon:'clipcheck',
+    desc:'Antrean transaksi yang menunggu persetujuan sesuai kewenangan peran Anda.',
+    custom:'approval',
+  },
+
+  'access': {
+    group:'sistem', title:'Hak Akses & Peran', icon:'userCheck',
+    desc:'Matriks kewenangan peran terhadap seluruh modul SIMASET BMN.',
+    custom:'access',
   },
 };
 
