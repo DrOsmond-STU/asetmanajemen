@@ -54,6 +54,148 @@
   }
   loadUserRecords();
 
+  // ---- Foto aset ----------------------------------------------------------
+  // Foto aset master disimpan pada localStorage terpisah agar catatan transaksi
+  // tetap ringkas. Aset yang belum difoto memakai ilustrasi kategori.
+  const PHOTO_KEY = 'simaset_asset_photos_v1';
+  let ASSET_PHOTOS = {};
+  try{ ASSET_PHOTOS = JSON.parse(localStorage.getItem(PHOTO_KEY)) || {}; }catch(e){ ASSET_PHOTOS = {}; }
+
+  function setAssetPhoto(assetId, dataUrl){
+    const prev = ASSET_PHOTOS[assetId];
+    ASSET_PHOTOS[assetId] = dataUrl;
+    try{
+      localStorage.setItem(PHOTO_KEY, JSON.stringify(ASSET_PHOTOS));
+      return true;
+    }catch(e){
+      if(prev===undefined) delete ASSET_PHOTOS[assetId]; else ASSET_PHOTOS[assetId] = prev;
+      toast('Penyimpanan browser penuh — foto tidak dapat disimpan.');
+      return false;
+    }
+  }
+  function clearAssetPhoto(assetId){
+    delete ASSET_PHOTOS[assetId];
+    try{ localStorage.setItem(PHOTO_KEY, JSON.stringify(ASSET_PHOTOS)); }catch(e){}
+  }
+  function hasAssetPhoto(assetId){ return !!ASSET_PHOTOS[assetId]; }
+
+  // Ilustrasi kategori untuk aset yang belum memiliki foto
+  const CATEGORY_ICON = {
+    'Teknologi Informasi':'cpu', 'Berbasis TI':'camera', 'Laboratorium':'layers',
+    'Cyber/Kripto':'shield', 'Pendukung Kritis':'activity', 'BMN Umum':'box',
+  };
+  function xmlEsc(v){
+    return String(v==null?'':v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+  }
+  function hueOf(seed){
+    let h = 0; const str = String(seed||'');
+    for(let i=0;i<str.length;i++) h = (h*31 + str.charCodeAt(i)) | 0;
+    return Math.abs(h) % 360;
+  }
+  // Warna mengikuti kategori agar mudah dibedakan sekilas; ID aset hanya
+  // memberi variasi kecil (ID berurutan menghasilkan hash yang mirip).
+  const CATEGORY_HUE = {
+    'Teknologi Informasi':214, 'Berbasis TI':268, 'Laboratorium':172,
+    'Cyber/Kripto':338, 'Pendukung Kritis':32, 'BMN Umum':146,
+  };
+  function assetIllustration(asset){
+    const body = ICONS[CATEGORY_ICON[asset.category] || 'box'] || ICONS.box;
+    const dasar = CATEGORY_HUE[asset.category] != null ? CATEGORY_HUE[asset.category] : hueOf(asset.category);
+    const hue = (dasar + (hueOf(asset.asset_id || asset.name) % 15) - 7 + 360) % 360;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">`
+      + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
+      + `<stop offset="0" stop-color="hsl(${hue},56%,48%)"/><stop offset="1" stop-color="hsl(${(hue+34)%360},62%,29%)"/>`
+      + `</linearGradient></defs><rect width="320" height="200" fill="url(#g)"/>`
+      + `<g opacity="0.10" stroke="#ffffff" stroke-width="1">`
+      + [1,2,3,4,5,6].map(i=>`<path d="M${i*46} 0 L${i*46} 200"/>`).join('')
+      + `</g><g transform="translate(119,46) scale(3.4)" fill="none" stroke="#ffffff" stroke-width="1.5"`
+      + ` stroke-linecap="round" stroke-linejoin="round" opacity="0.95">${body}</g>`
+      + `<text x="160" y="182" text-anchor="middle" font-family="Arial,Helvetica,sans-serif"`
+      + ` font-size="14" fill="#ffffff" opacity="0.85">${xmlEsc(asset.category||'Aset')}</text></svg>`;
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  // Sumber gambar untuk sebuah aset: foto asli bila ada, selain itu ilustrasi
+  function assetPhotoSrc(asset){
+    if(!asset) return '';
+    return ASSET_PHOTOS[asset.asset_id] || assetIllustration(asset);
+  }
+  // Dipakai oleh konfigurasi kolom pada modules.js (di luar closure ini)
+  window.assetPhotoSrc = assetPhotoSrc;
+
+  // Kompres gambar agar muat pada localStorage (sisi peramban, tanpa server)
+  function compressImage(file, maxPx, quality){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onerror = ()=> reject(new Error('Berkas tidak terbaca'));
+      reader.onload = ()=>{
+        const img = new Image();
+        img.onerror = ()=> reject(new Error('Bukan berkas gambar yang didukung'));
+        img.onload = ()=>{
+          const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width*scale));
+          const h = Math.max(1, Math.round(img.height*scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          try{ resolve(canvas.toDataURL('image/jpeg', quality)); }
+          catch(err){ reject(err); }
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  // Minta satu foto dari pengguna (kamera perangkat atau berkas) lalu kompres
+  function pickPhoto(){
+    return new Promise((resolve)=>{
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.addEventListener('change', async ()=>{
+        const file = input.files && input.files[0];
+        input.remove();
+        if(!file) return resolve(null);
+        try{ resolve(await compressImage(file, 1024, 0.72)); }
+        catch(e){ toast('Berkas tidak dapat dibaca sebagai gambar.'); resolve(null); }
+      });
+      input.click();
+    });
+  }
+  const photoEmptyHtml = (teks)=> `<div class="photo-empty">${icon('camera')}<span>${esc(teks||'Belum ada foto')}</span></div>`;
+
+  // Menyambungkan kontrol pada field bertipe foto di dalam formulir
+  function bindPhotoFields(root){
+    root.querySelectorAll('[data-photo-input]').forEach(input=>{
+      const key = input.dataset.photoInput;
+      const wrap = root.querySelector(`[data-photo-wrap="${key}"]`);
+      if(!wrap) return;
+      const prev = wrap.querySelector('[data-photo-preview]');
+      const clearBtn = wrap.querySelector('[data-photo-clear]');
+      const hidden = wrap.querySelector(`[data-field="${key}"]`);
+      wrap.querySelector('[data-photo-pick]').addEventListener('click', ()=> input.click());
+      clearBtn.addEventListener('click', ()=>{
+        hidden.value = ''; input.value = '';
+        prev.innerHTML = photoEmptyHtml();
+        clearBtn.hidden = true;
+      });
+      input.addEventListener('change', async ()=>{
+        const file = input.files && input.files[0];
+        if(!file) return;
+        prev.innerHTML = photoEmptyHtml('Memproses foto…');
+        try{
+          const dataUrl = await compressImage(file, 1024, 0.72);
+          hidden.value = dataUrl;
+          prev.innerHTML = `<img src="${dataUrl}" alt="Pratinjau foto">`;
+          clearBtn.hidden = false;
+        }catch(e){
+          prev.innerHTML = photoEmptyHtml('Gagal memuat gambar');
+          toast('Berkas tidak dapat dibaca sebagai gambar.');
+        }
+      });
+    });
+  }
+
   // Generate the next sequential ID following an existing record's ID pattern,
   // e.g. rows with "AST-2026-000062" -> next "AST-2026-000063".
   function nextId(rows, idKey){
@@ -267,6 +409,7 @@
           tbody += `<tr data-id="${esc(r[config.idKey])}">` + cols.map(c=>{
             const val = c.render ? c.render(r) : r[c.key];
             if(c.badge){ return `<td>${badgeHtml(val, c.badge(r))}</td>`; }
+            if(c.html){ return `<td class="${c.cls||''}">${val||''}</td>`; }
             return `<td class="${c.cls||''}">${esc(val==null?'-':val)}</td>`;
           }).join('') + '</tr>';
         });
@@ -351,7 +494,8 @@
     const exportBtn = qs('#export-btn');
     if(exportBtn) exportBtn.addEventListener('click', ()=>{
       const idOrTitle = (options.moduleId || config.title || 'data').toString().toLowerCase().replace(/[^a-z0-9]+/g,'-');
-      exportCSV(`simaset-${idOrTitle}.csv`, config.columns, lastFiltered);
+      // kolom gambar tidak disertakan pada ekspor
+      exportCSV(`simaset-${idOrTitle}.csv`, config.columns.filter(c=>!c.html), lastFiltered);
     });
     const addBtn = qs('#add-btn');
     if(addBtn) addBtn.addEventListener('click', ()=> openAddForm(options.moduleId || config.title));
@@ -411,9 +555,11 @@
         {key:'condition_score', label:'Kondisi', type:'select', required:true, default:'4', options:()=>[5,4,3,2,1].map(n=>({value:String(n), label:['','1 - Rusak Berat','2 - Kurang','3 - Cukup','4 - Baik','5 - Sangat Baik'][n]}))},
         {key:'criticality', label:'Criticality', type:'select', default:'Medium', options:()=>staticOpts(['Low','Medium','High','Critical'])},
         {key:'status', label:'Status', type:'select', default:'In Use', options:()=>staticOpts(['In Use','Reserved','Under Maintenance','In Storage'])},
+        {key:'photo', label:'Foto Aset', type:'photo', full:true},
       ],
       build(v){
         const id = nextId(D.assets, 'asset_id');
+        if(v.photo) setAssetPhoto(id, v.photo);
         const seq = D.assets.length + 1;
         const kodeBarang = '3.9.9.99';
         const nup = String(seq).padStart(6,'0');
@@ -524,12 +670,14 @@
         {key:'cost', label:'Estimasi Biaya (Rp)', type:'number', default:0, min:0},
         {key:'downtime_hours', label:'Downtime (jam)', type:'number', default:0, min:0},
         {key:'status', label:'Status', type:'select', default:'Terjadwal', options:()=>staticOpts(['Terjadwal','Berjalan','Menunggu Suku Cadang','Selesai','Overdue'])},
+        {key:'photo', label:'Foto Aset / Bukti Pekerjaan', type:'photo', full:true},
       ],
       build(v){
         const a = assetById(v.asset_id);
         return { wo_id: nextId(D.work_orders,'wo_id'), asset_id:v.asset_id, asset_name:a?a.name:'-', type:v.type||'Preventive', priority:v.priority||'Medium',
           technician:v.technician||'-', vendor:v.vendor||'-', problem:v.problem, scheduled_date:v.scheduled_date||todayStr(),
-          completed_date: v.status==='Selesai'?todayStr():null, cost:parseInt(v.cost,10)||0, downtime_hours:parseInt(v.downtime_hours,10)||0, status:v.status||'Terjadwal' };
+          completed_date: v.status==='Selesai'?todayStr():null, cost:parseInt(v.cost,10)||0, downtime_hours:parseInt(v.downtime_hours,10)||0, status:v.status||'Terjadwal',
+          photo: v.photo || null };
       },
       successMsg:'Work Order baru berhasil dibuat.',
     },
@@ -548,12 +696,14 @@
         {key:'documentation', label:'Dokumentasi (1–5)', type:'number', default:3, min:1, max:5},
         {key:'finding', label:'Temuan', type:'textarea', full:true},
         {key:'recommendation', label:'Rekomendasi', type:'select', default:'Lanjutkan operasi', options:()=>staticOpts(['Lanjutkan operasi','Jadwalkan maintenance','Perlu perbaikan segera','Pertimbangkan replacement'])},
+        {key:'photo', label:'Foto Kondisi Aset', type:'photo', full:true},
       ],
       build(v){
         const a = assetById(v.asset_id);
         return { inspection_id: nextId(D.inspections,'inspection_id'), asset_id:v.asset_id, asset_name:a?a.name:'-', inspector:v.inspector||CURRENT_USER.name,
           date:v.date||todayStr(), physical_condition:+v.physical_condition||3, performance:+v.performance||3, reliability:+v.reliability||3,
-          safety:+v.safety||3, maintenance:+v.maintenance||3, documentation:+v.documentation||3, finding:v.finding||'-', recommendation:v.recommendation||'Lanjutkan operasi' };
+          safety:+v.safety||3, maintenance:+v.maintenance||3, documentation:+v.documentation||3, finding:v.finding||'-', recommendation:v.recommendation||'Lanjutkan operasi',
+          photo: v.photo || null };
       },
       successMsg:'Hasil inspeksi berhasil dicatat.',
     },
@@ -797,6 +947,17 @@
         ${!f.required?'<option value="">— Tidak diisi —</option>':''}
         ${opts.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(defVal)?'selected':''}>${esc(o.label)}</option>`).join('')}
       </select>`;
+    } else if(f.type==='photo'){
+      control = `<div class="photo-field" data-photo-wrap="${f.key}">
+        <div class="photo-preview" data-photo-preview>${pre ? `<img src="${pre}" alt="Pratinjau foto">` : photoEmptyHtml()}</div>
+        <div class="photo-actions">
+          <button type="button" class="btn btn-outline btn-sm" data-photo-pick>${icon('camera')}Ambil / Unggah Foto</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-photo-clear ${pre?'':'hidden'}>${icon('trash')}Hapus</button>
+        </div>
+        <div class="photo-hint">Pada perangkat bergerak tombol ini membuka kamera. Foto dikompres otomatis sebelum disimpan.</div>
+        <input type="file" accept="image/*" capture="environment" data-photo-input="${f.key}" hidden>
+        <input type="hidden" data-field="${f.key}" value="${pre||''}">
+      </div>`;
     } else if(f.type==='textarea'){
       control = `<textarea class="input" rows="3" data-field="${f.key}" placeholder="${esc(f.placeholder||'')}">${esc(defVal)}</textarea>`;
     } else {
@@ -833,6 +994,7 @@
       </div>
     `);
     const root = qs('#drawer-root');
+    bindPhotoFields(root);
     qs('#add-cancel').addEventListener('click', closeDrawer);
     qs('#add-submit').addEventListener('click', ()=>{
       let ok = true;
@@ -892,9 +1054,13 @@
     const fields = DETAIL_FIELDS[Object.keys(MODULES).find(k=>MODULES[k]===config)] || Object.keys(row);
     const moduleId = Object.keys(MODULES).find(k=>MODULES[k]===config);
     let scoreSection = '';
+    if(moduleId==='maintenance'){
+      scoreSection = photoEvidenceBlock(row, 'Foto Aset / Bukti Pekerjaan');
+    }
     if(moduleId==='inspection'){
       const params = [['physical_condition','Kondisi Fisik'],['performance','Performa'],['reliability','Reliabilitas'],['safety','Keselamatan'],['maintenance','Maintenance'],['documentation','Dokumentasi']];
-      scoreSection = `<div class="section-title">Skor Penilaian (1–5)</div><div class="def-grid">` + params.map(([k,l])=>`
+      scoreSection = photoEvidenceBlock(row, 'Foto Kondisi Aset')
+        + `<div class="section-title">Skor Penilaian (1–5)</div><div class="def-grid">` + params.map(([k,l])=>`
         <div class="def-item"><span class="k">${l}</span>
           <div class="score-dots" style="margin-top:4px">${[1,2,3,4,5].map(i=>`<i class="${i<=row[k]?'on':''}"></i>`).join('')}</div>
         </div>`).join('') + `</div>`;
@@ -965,6 +1131,36 @@
   }
 
   // ---- Asset detail (BMN Register) — rich tabbed drawer ----------------------
+  // Blok foto pada detail aset master; tombol ubah mengikuti hak akses peran
+  function assetPhotoBlock(a){
+    const asli = hasAssetPhoto(a.asset_id);
+    const boleh = canWrite('bmn-register');
+    return `
+      <div class="asset-photo-block">
+        <div class="asset-photo"><img src="${assetPhotoSrc(a)}" alt="Foto ${esc(a.name)}"></div>
+        <div class="asset-photo-side">
+          <div class="asset-photo-cap">${asli ? 'Foto aset terunggah' : 'Ilustrasi kategori — aset ini belum difoto'}</div>
+          ${boleh ? `<div class="photo-actions">
+            <button type="button" class="btn btn-outline btn-sm" id="asset-photo-set">${icon('camera')}${asli?'Ganti Foto':'Unggah Foto'}</button>
+            ${asli ? `<button type="button" class="btn btn-ghost btn-sm" id="asset-photo-del">${icon('trash')}Hapus</button>` : ''}
+          </div>` : `<div class="photo-hint">Peran ${esc(ROLE)} tidak berwenang mengubah foto aset.</div>`}
+        </div>
+      </div>`;
+  }
+  // Foto yang dilampirkan saat pencatatan Work Order / Inspeksi
+  function photoEvidenceBlock(row, judul){
+    const a = D.assets.find(x=>x.asset_id===row.asset_id);
+    if(row.photo){
+      return `<div class="section-title">${esc(judul)}</div>
+        <div class="evidence-photo"><img src="${row.photo}" alt="${esc(judul)}"></div>`;
+    }
+    return `<div class="section-title">${esc(judul)}</div>
+      <div class="evidence-photo is-empty">
+        ${a ? `<img src="${assetPhotoSrc(a)}" alt="Foto aset ${esc(a.name)}">` : ''}
+        <div class="evidence-note">${icon('camera')}<span>Tidak ada foto dilampirkan pada pencatatan ini${a?' — gambar di atas adalah foto/ilustrasi aset terkait':''}.</span></div>
+      </div>`;
+  }
+
   function openAssetDetail(assetId){
     const a = D.assets.find(x=>x.asset_id===assetId);
     if(!a) return;
@@ -985,6 +1181,7 @@
     function tabBody(id){
       if(id==='ringkasan'){
         return `
+          ${assetPhotoBlock(a)}
           <div class="section-title">Identitas BMN</div>
           ${defGrid(a, ['asset_id','bmn_uid','satker','kode_barang','nup','tag_id'])}
           <div class="section-title">Spesifikasi</div>
@@ -1011,8 +1208,9 @@
       }
       if(id==='riwayat'){
         let rows = '';
-        wos.forEach(w=> rows += `<div class="timeline-item"><div class="timeline-dot"></div><div><div class="t-title">Work Order — ${esc(w.problem)}</div><div class="t-meta">${esc(w.type)} · ${esc(w.technician)} · ${fmtDate(w.scheduled_date)} · ${badgeHtml(w.status, badgeClassFor('status',w.status))}</div></div></div>`);
-        inspections.forEach(i=> rows += `<div class="timeline-item"><div class="timeline-dot" style="background:var(--gold-500);box-shadow:0 0 0 3px var(--gold-100)"></div><div><div class="t-title">Inspeksi — ${esc(i.finding)}</div><div class="t-meta">${esc(i.inspector)} · ${fmtDate(i.date)} · Skor fisik ${i.physical_condition}/5</div></div></div>`);
+        const thumb = (r)=> r.photo ? `<img class="timeline-photo" src="${r.photo}" alt="Foto pencatatan">` : '';
+        wos.forEach(w=> rows += `<div class="timeline-item"><div class="timeline-dot"></div><div><div class="t-title">Work Order — ${esc(w.problem)}</div><div class="t-meta">${esc(w.type)} · ${esc(w.technician)} · ${fmtDate(w.scheduled_date)} · ${badgeHtml(w.status, badgeClassFor('status',w.status))}</div>${thumb(w)}</div></div>`);
+        inspections.forEach(i=> rows += `<div class="timeline-item"><div class="timeline-dot" style="background:var(--gold-500);box-shadow:0 0 0 3px var(--gold-100)"></div><div><div class="t-title">Inspeksi — ${esc(i.finding)}</div><div class="t-meta">${esc(i.inspector)} · ${fmtDate(i.date)} · Skor fisik ${i.physical_condition}/5</div>${thumb(i)}</div></div>`);
         if(!rows) rows = `<div class="table-empty">${icon('search')}<div>Belum ada riwayat tercatat untuk aset ini.</div></div>`;
         return `<div class="section-title">Riwayat Maintenance &amp; Inspeksi</div><div class="timeline">${rows}</div>`;
       }
@@ -1059,11 +1257,32 @@
         <button class="btn btn-primary btn-sm" id="drawer-close2">Tutup</button>
       </div>
     `);
+    function bindPhotoActions(){
+      const setBtn = qs('#asset-photo-set');
+      if(setBtn) setBtn.addEventListener('click', async ()=>{
+        const dataUrl = await pickPhoto();
+        if(!dataUrl) return;
+        if(setAssetPhoto(a.asset_id, dataUrl)){
+          toast(`Foto aset ${a.asset_id} berhasil disimpan.`);
+          qs('#asset-tab-body').innerHTML = tabBody('ringkasan');
+          bindPhotoActions();
+        }
+      });
+      const delBtn = qs('#asset-photo-del');
+      if(delBtn) delBtn.addEventListener('click', ()=>{
+        clearAssetPhoto(a.asset_id);
+        toast('Foto aset dihapus — kembali memakai ilustrasi kategori.');
+        qs('#asset-tab-body').innerHTML = tabBody('ringkasan');
+        bindPhotoActions();
+      });
+    }
+    bindPhotoActions();
     qs('#asset-tabs').querySelectorAll('.drawer-tab').forEach(t=>{
       t.addEventListener('click', ()=>{
         qs('#asset-tabs').querySelectorAll('.drawer-tab').forEach(x=>x.classList.remove('active'));
         t.classList.add('active');
         qs('#asset-tab-body').innerHTML = tabBody(t.dataset.tab);
+        if(t.dataset.tab==='ringkasan') bindPhotoActions();
       });
     });
     qs('#drawer-print').addEventListener('click', ()=> toast('Simulasi cetak Berita Acara Serah Terima (BAST).'));

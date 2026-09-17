@@ -124,6 +124,8 @@ const MODULES = {
       {key:'criticality', label:'Criticality'},
     ],
     columns:[
+      // kolom gambar: dirender sebagai HTML (assetPhotoSrc disediakan app.js)
+      {key:'photo', label:'Foto', html:true, cls:'cell-photo', render:r=>`<img class="row-photo" src="${window.assetPhotoSrc(r)}" alt="">`},
       {key:'asset_id', label:'Asset ID', cls:'cell-mono'},
       {key:'name', label:'Nama Aset', cls:'cell-strong'},
       {key:'category', label:'Kategori'},
