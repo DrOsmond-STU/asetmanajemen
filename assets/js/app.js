@@ -115,12 +115,20 @@
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   // Sumber gambar untuk sebuah aset: foto asli bila ada, selain itu ilustrasi
+  // Hanya data URI gambar yang boleh masuk ke atribut src. Nilai foto berasal
+  // dari localStorage yang dapat disunting pemilik peramban; tanpa penyaringan
+  // ini sebuah nilai berisi tanda kutip dapat keluar dari atribut (XSS).
+  const DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);[a-z0-9.+=;,%-]*base64,[A-Za-z0-9+/=]+$|^data:image\/svg\+xml;charset=utf-8,[^"'<>]*$/i;
+  function safePhotoSrc(value){
+    return (typeof value === 'string' && DATA_IMAGE_RE.test(value)) ? value : '';
+  }
   function assetPhotoSrc(asset){
     if(!asset) return '';
-    return ASSET_PHOTOS[asset.asset_id] || assetIllustration(asset);
+    return safePhotoSrc(ASSET_PHOTOS[asset.asset_id]) || assetIllustration(asset);
   }
   // Dipakai oleh konfigurasi kolom pada modules.js (di luar closure ini)
   window.assetPhotoSrc = assetPhotoSrc;
+  window.safePhotoSrc = safePhotoSrc;
 
   // Kompres gambar agar muat pada localStorage (sisi peramban, tanpa server)
   function compressImage(file, maxPx, quality){
@@ -186,7 +194,7 @@
         try{
           const dataUrl = await compressImage(file, 1024, 0.72);
           hidden.value = dataUrl;
-          prev.innerHTML = `<img src="${dataUrl}" alt="Pratinjau foto">`;
+          prev.innerHTML = `<img src="${safePhotoSrc(dataUrl)}" alt="Pratinjau foto">`;
           clearBtn.hidden = false;
         }catch(e){
           prev.innerHTML = photoEmptyHtml('Gagal memuat gambar');
@@ -949,7 +957,7 @@
       </select>`;
     } else if(f.type==='photo'){
       control = `<div class="photo-field" data-photo-wrap="${f.key}">
-        <div class="photo-preview" data-photo-preview>${pre ? `<img src="${pre}" alt="Pratinjau foto">` : photoEmptyHtml()}</div>
+        <div class="photo-preview" data-photo-preview>${safePhotoSrc(pre) ? `<img src="${safePhotoSrc(pre)}" alt="Pratinjau foto">` : photoEmptyHtml()}</div>
         <div class="photo-actions">
           <button type="button" class="btn btn-outline btn-sm" data-photo-pick>${icon('camera')}Ambil / Unggah Foto</button>
           <button type="button" class="btn btn-ghost btn-sm" data-photo-clear ${pre?'':'hidden'}>${icon('trash')}Hapus</button>
@@ -1150,9 +1158,10 @@
   // Foto yang dilampirkan saat pencatatan Work Order / Inspeksi
   function photoEvidenceBlock(row, judul){
     const a = D.assets.find(x=>x.asset_id===row.asset_id);
-    if(row.photo){
+    const foto = safePhotoSrc(row.photo);
+    if(foto){
       return `<div class="section-title">${esc(judul)}</div>
-        <div class="evidence-photo"><img src="${row.photo}" alt="${esc(judul)}"></div>`;
+        <div class="evidence-photo"><img src="${foto}" alt="${esc(judul)}"></div>`;
     }
     return `<div class="section-title">${esc(judul)}</div>
       <div class="evidence-photo is-empty">
@@ -1208,7 +1217,7 @@
       }
       if(id==='riwayat'){
         let rows = '';
-        const thumb = (r)=> r.photo ? `<img class="timeline-photo" src="${r.photo}" alt="Foto pencatatan">` : '';
+        const thumb = (r)=> safePhotoSrc(r.photo) ? `<img class="timeline-photo" src="${safePhotoSrc(r.photo)}" alt="Foto pencatatan">` : '';
         wos.forEach(w=> rows += `<div class="timeline-item"><div class="timeline-dot"></div><div><div class="t-title">Work Order — ${esc(w.problem)}</div><div class="t-meta">${esc(w.type)} · ${esc(w.technician)} · ${fmtDate(w.scheduled_date)} · ${badgeHtml(w.status, badgeClassFor('status',w.status))}</div>${thumb(w)}</div></div>`);
         inspections.forEach(i=> rows += `<div class="timeline-item"><div class="timeline-dot" style="background:var(--gold-500);box-shadow:0 0 0 3px var(--gold-100)"></div><div><div class="t-title">Inspeksi — ${esc(i.finding)}</div><div class="t-meta">${esc(i.inspector)} · ${fmtDate(i.date)} · Skor fisik ${i.physical_condition}/5</div>${thumb(i)}</div></div>`);
         if(!rows) rows = `<div class="table-empty">${icon('search')}<div>Belum ada riwayat tercatat untuk aset ini.</div></div>`;

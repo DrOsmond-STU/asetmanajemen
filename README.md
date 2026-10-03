@@ -1,61 +1,125 @@
-# SIMASET BMN — Purwarupa UI/UX
+# SIMASET BMN
 
-Purwarupa (prototype) antarmuka **Sistem Informasi Manajemen Aset BMN (SIMASET BMN)** — *Integrated Asset & BMN Lifecycle Management System* berbasis prinsip **ISO 55000/55001**, disusun berdasarkan dokumen *SIMASET BMN ISO 55000 POLTEK SSN v2.0 — Business Requirement & Functional Specification*.
+**Integrated Asset & BMN Lifecycle Management System** — purwarupa aplikasi
+manajemen aset dan Barang Milik Negara yang selaras dengan prinsip
+**ISO 55000/55001**, ketentuan pengelolaan BMN, dan praktik keamanan informasi
+**ISO/IEC 27001**.
 
-Ini adalah **prototipe front-end statis** (tanpa backend/database sungguhan) untuk keperluan demonstrasi alur kerja, tata letak informasi dan interaksi UI/UX seluruh 21 modul yang dispesifikasikan pada dokumen BRD. Seluruh data yang tampil adalah **data dummy/simulasi** yang dibangkitkan secara terprogram agar realistis secara struktur, bukan data produksi.
+Dikembangkan oleh **Lembaga Pusat Kajian Manajemen Indonesia (LPKMI)**.
+
+🔗 **Aplikasi berjalan:** https://simaset.semestateknologiutama.com
+
+> ⚠️ **Purwarupa front-end tanpa server aplikasi.** Seluruh data bersifat
+> simulasi dan seluruh pemeriksaan hak akses berjalan di peramban. Jangan
+> memasukkan data BMN sungguhan atau foto aset sensitif. Baca
+> **[SECURITY.md](SECURITY.md)** sebelum demo atau uji coba.
+
+---
+
+## Isi singkat
+
+| | |
+|---|---|
+| **27 modul** | dalam 10 kelompok navigasi — register, operasional lapangan, pemeliharaan, risiko, kepatuhan BMN, keamanan siber, governance, pelaporan, integrasi |
+| **10 peran pengguna** | dengan matriks kewenangan `R` / `RW` / `A` per modul |
+| **15 pengguna** | 10 akun demo yang dapat dipakai masuk + 5 pengguna operasional |
+| **62 aset contoh** | lengkap dengan tag QR/barcode, work order, inspeksi, risiko dan biaya |
+| **0 dependensi runtime eksternal** | seluruh pustaka di-host sendiri |
 
 ## Menjalankan secara lokal
 
-Karena murni HTML/CSS/JS statis, cukup jalankan static file server dari root proyek, misalnya:
+Aplikasi murni HTML/CSS/JS statis — cukup sajikan direktori ini lewat static
+file server:
 
 ```bash
-npx http-server -p 8080
-# atau
 python3 -m http.server 8080
+# atau
+npx http-server -p 8080
 ```
 
-Lalu buka `http://localhost:8080/index.html`.
+Buka `http://localhost:8080/index.html`, lalu masuk dengan salah satu akun demo
+(kata sandi seragam **`simaset123`**):
+
+| Peran | Email | Menu tampil |
+|---|---|---|
+| Super Admin | `admin@simaset.go.id` | 27 |
+| Asset Manager | `asset.manager@simaset.go.id` | 26 (7 dapat disetujui) |
+| BMN Officer | `bmn.officer@simaset.go.id` | 25 |
+| Finance | `finance@simaset.go.id` | 11 |
+| Maintenance | `maintenance@simaset.go.id` | 11 |
+| Inspector | `inspector@simaset.go.id` | 11 |
+| Custodian | `custodian@simaset.go.id` | 10 |
+| Cyber Officer | `cyber.officer@simaset.go.id` | 14 (2 dapat disetujui) |
+| Auditor | `auditor@simaset.go.id` | 27 (semua lihat saja) |
+| Management | `management@simaset.go.id` | 16 (5 dapat disetujui) |
+
+Daftar lengkap: [docs/HAK-AKSES.md](docs/HAK-AKSES.md).
+
+> Membuka berkas lewat `file://` tidak disarankan — beberapa fitur memerlukan
+> konteks HTTP.
 
 ## Struktur proyek
 
 ```
-index.html                 # Halaman login
-app/index.html              # Shell aplikasi (SPA) setelah login
-assets/css/style.css        # Design system (tokens, layout, komponen)
-assets/js/icons.js          # Set ikon inline SVG (tanpa dependensi eksternal)
-assets/js/data.js           # Data dummy — 26 entitas sesuai data dictionary BRD
-assets/js/modules.js        # Konfigurasi 21 modul (kolom, filter, KPI, label)
-assets/js/app.js            # Router hash-based + rendering generik & kustom
-assets/js/vendor/chart.umd.js  # Chart.js (di-self-host, tidak bergantung CDN)
+index.html                      Halaman masuk
+app/index.html                  Kerangka aplikasi (SPA) setelah masuk
+assets/css/style.css            Design system: token, tata letak, komponen
+assets/js/icons.js              Set ikon SVG inline
+assets/js/data.js               Dataset simulasi inti (aset, WO, inspeksi, dll.)
+assets/js/data-ext.js           Dataset tambahan (pengguna, IoT, integrasi, persetujuan)
+assets/js/rbac.js               Matriks hak akses 10 peran × 27 modul
+assets/js/modules.js            Registri modul: kolom, filter, KPI, label
+assets/js/app.js                Router hash, rendering, formulir, RBAC, foto
+assets/js/vendor/               Chart.js, qrcode-generator, JsBarcode (host sendiri)
+assets/img/                     Logo LPKMI
+docs/                           Dokumentasi + berkas paparan & laporan
 ```
 
-## Akun demo
+## Fitur utama
 
-Login menerima salah satu dari 10 akun demo berikut (password sama untuk semua: `simaset123`), atau klik "Gunakan akun demo" pada halaman login untuk mengisi otomatis:
+- **Register BMN** dengan identitas ganda (Asset ID internal ↔ Kode Satker +
+  Kode Barang + NUP), foto aset, dan detail bertab.
+- **QR Code & Barcode sungguhan** (bukan gambar contoh) lengkap dengan tampilan
+  label siap cetak.
+- **Pencatatan lapangan**: sensus dengan antrean anomali, mutasi/IMACD,
+  custodian, dan siklus Joiner–Mover–Leaver.
+- **Pemeliharaan & inspeksi** dengan lampiran foto kondisi dari kamera perangkat.
+- **IoT & Telemetry**: 10 perangkat sensor, grafik telemetry berjalan, alarm
+  ambang batas yang dapat ditindaklanjuti menjadi Work Order.
+- **Risiko, kinerja (AHI) dan biaya siklus hidup** sebagai dasar keputusan
+  Keep / Maintain / Refurbish / Replace / Dispose.
+- **Kepatuhan BMN**: rekonsiliasi SAKTI/SIMAN dan dossier disposal.
+- **Keamanan siber**: aset sensitif, sanitisasi media mengacu NIST SP 800-88 Rev.2.
+- **Persetujuan berbasis peran**, integrasi 7 sistem eksternal, dan pelaporan
+  dengan ekspor PDF/Excel/CSV.
 
-| Peran | Email |
+## Dokumentasi
+
+| Dokumen | Isi |
 |---|---|
-| Super Admin | admin@simaset.go.id |
-| Asset Manager | asset.manager@simaset.go.id |
-| BMN Officer | bmn.officer@simaset.go.id |
-| Finance | finance@simaset.go.id |
-| Maintenance | maintenance@simaset.go.id |
-| Inspector | inspector@simaset.go.id |
-| Custodian | custodian@simaset.go.id |
-| Cyber Officer | cyber.officer@simaset.go.id |
-| Auditor | auditor@simaset.go.id |
-| Management | management@simaset.go.id |
+| **[SECURITY.md](SECURITY.md)** | Model keamanan, kelemahan yang diketahui, pengerasan wajib sebelum produksi |
+| [docs/README.md](docs/README.md) | Indeks seluruh dokumentasi dan berkas paparan |
+| [docs/ARSITEKTUR.md](docs/ARSITEKTUR.md) | Arsitektur, alur render, keputusan teknis |
+| [docs/MODUL.md](docs/MODUL.md) | Katalog 27 modul beserta fungsinya |
+| [docs/HAK-AKSES.md](docs/HAK-AKSES.md) | Peran, matriks kewenangan, cara penegakannya |
+| [docs/DATA.md](docs/DATA.md) | Model data, dataset, dan penyimpanan peramban |
+| [docs/PANDUAN-PENGGUNA.md](docs/PANDUAN-PENGGUNA.md) | Panduan pemakaian per peran dan alur kerja utama |
+| [docs/PENGEMBANGAN.md](docs/PENGEMBANGAN.md) | Cara menambah modul, formulir, peran; konvensi & pengujian |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Penempatan ke server dan verifikasinya |
+| [CHANGELOG.md](CHANGELOG.md) | Riwayat perubahan |
 
-Sesi disimpan di `sessionStorage` browser — murni simulasi, tidak ada autentikasi/backend sungguhan.
+## Batasan purwarupa
 
-## Cakupan modul (mengikuti Bab 9 BRD)
+- Tidak ada server aplikasi, basis data, maupun API. Data baru disimpan di
+  `localStorage` peramban — per perangkat, per peramban.
+- Hak akses adalah kontrol antarmuka, **bukan batas keamanan**.
+- Integrasi SAKTI/SIMAN, HR, Finance, IoT dan lainnya ditampilkan sebagai
+  status dan riwayat simulasi, belum terhubung ke sistem sungguhan.
+- Ekspor PDF memakai dialog cetak peramban.
 
-Dashboard Eksekutif, Master Data, BMN Register, Asset Lifecycle, QR/Barcode & Asset Tag, Sensus & Inventarisasi, Mutasi/IMACD, Custodian Management, JML Lifecycle, Maintenance & Work Order, Inspection & Condition, Risk & Criticality, Performance & Asset Health, Financial & Lifecycle Cost, SAKTI/SIMAN Reconciliation, Cyber Asset Management, Media Sanitization, BMN Disposal, ISO 55000/55001 Governance, Audit & Compliance, Document Management, Reporting & Executive Dashboard.
+Rincian dan rencana pengerasan: [SECURITY.md](SECURITY.md).
 
-## Catatan desain
+## Lisensi dan kepemilikan
 
-Referensi desain yang diminta (`qhse.semestateknologiutama.com`) tidak dapat diakses dari lingkungan pengembangan pada saat prototipe ini dibuat, sehingga desain disusun mandiri dengan gaya korporat/instansi pemerintah (sidebar navy, aksen biru & emas, kartu KPI, tabel data dengan filter dan drawer detail) yang selaras dengan konteks ISO 55000/BMN dan identitas kampus kedinasan siber. Silakan sesuaikan token warna pada `assets/css/style.css` (`:root`) apabila ingin menyelaraskan lebih dekat dengan sistem QHSE yang sudah berjalan.
-
-## Tahap lanjutan
-
-Sebagaimana disebutkan pada Bab 30 dokumen BRD, tahap berikutnya sebelum development adalah penyusunan SRS teknis: ERD fisik, data dictionary per tabel, spesifikasi API, wireframe/UI resmi, detail workflow approval, notification matrix dan UAT.
+Hak cipta © 2026 Lembaga Pusat Kajian Manajemen Indonesia (LPKMI).
+Penggunaan internal untuk keperluan kajian, demonstrasi dan pelatihan.
