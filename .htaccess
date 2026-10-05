@@ -1,0 +1,45 @@
+# ==========================================================================
+# SIMASET BMN — konfigurasi web server
+# ==========================================================================
+
+Options -Indexes
+DirectoryIndex index.html index.php
+
+# ---- Berkas yang tidak boleh disajikan ------------------------------------
+# Riwayat git berada di dalam akar dokumen karena deploy memakai git; tanpa
+# aturan ini seluruh kode dan riwayatnya dapat diunduh siapa pun.
+RedirectMatch 404 ^/\.git(/|$)
+# Skema dan skrip seeder tidak boleh dapat dipanggil lewat HTTP.
+RedirectMatch 404 ^/db(/|$)
+
+<FilesMatch "(^\.|\.(sql|log|ini|sh|bak|yml|yaml|json\.dist)$|composer\.(json|lock)$|package(-lock)?\.json$)">
+  Require all denied
+</FilesMatch>
+
+# ---- Header keamanan ------------------------------------------------------
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  # Kamera diperlukan untuk pengambilan foto aset dari perangkat bergerak.
+  Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+
+  # Tidak ada 'unsafe-inline' pada script-src: seluruh skrip berada di berkas
+  # tersendiri. style-src masih memerlukannya karena purwarupa memakai atribut
+  # style sebaris pada banyak komponen.
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
+
+  # Respons API tidak boleh disimpan di cache bersama.
+  <FilesMatch "\.php$">
+    Header always set Cache-Control "no-store"
+  </FilesMatch>
+</IfModule>
+
+# ---- HTTPS ----------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>

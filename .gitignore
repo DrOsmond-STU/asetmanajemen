@@ -1,0 +1,9 @@
+# Kredensial basis data — dibuat langsung di server, tidak pernah masuk git
+api/config.php
+
+# Foto yang diunggah pengguna
+uploads/
+
+# Berkas kerja
+node_modules/
+*.log

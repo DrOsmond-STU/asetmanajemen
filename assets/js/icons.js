@@ -16,6 +16,7 @@ const ICONS = {
   dollar: '<circle cx="12" cy="12" r="9"/><path d="M12 6v12M15.5 9.5c0-1.4-1.6-2.5-3.5-2.5s-3.5 1-3.5 2.3c0 3 7 1.4 7 4.4 0 1.4-1.6 2.3-3.5 2.3s-3.5-1-3.5-2.4" stroke-linecap="round"/>',
   refresh: '<path d="M21 12a9 9 0 01-15.4 6.4L3 16" stroke-linecap="round"/><path d="M3 12a9 9 0 0115.4-6.4L21 8" stroke-linecap="round"/><path d="M21 3v5h-5M3 21v-5h5"/>',
   shield: '<path d="M12 2l8 3.5v6c0 5-3.4 8.7-8 10.5-4.6-1.8-8-5.5-8-10.5v-6L12 2z"/>',
+  edit: '<path d="M12 20h9" stroke-linecap="round"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" stroke-linecap="round" stroke-linejoin="round"/>',
   trash: '<path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" stroke-linecap="round" stroke-linejoin="round"/>',
   fileCheck: '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/>',

@@ -2,17 +2,17 @@
 // SIMASET BMN — Purwarupa SPA logic (vanilla JS, hash router)
 // ==========================================================================
 
-(function(){
+window.startSimaset = function(){
 
-  // ---- Auth guard --------------------------------------------------------
-  let CURRENT_USER = null;
-  try{ CURRENT_USER = JSON.parse(sessionStorage.getItem('simaset_user')); }catch(e){}
-  if(!CURRENT_USER){
-    window.location.href = '../index.html';
-    return;
-  }
-
-  const D = SIMASET_DATA;
+  // ---- Sumber data -------------------------------------------------------
+  // Identitas pengguna dan seluruh data disiapkan boot.js dari /api/bootstrap.
+  // Sesi sesungguhnya dipegang cookie HttpOnly di server; tidak ada data
+  // pengguna yang disimpan di peramban.
+  const CURRENT_USER = window.SIMASET_USER;
+  const D = window.SIMASET_DATA;
+  // Dataset yang dikosongkan server karena peran ini tidak berhak membacanya.
+  const RESTRICTED = new Set(window.SIMASET_RESTRICTED || []);
+  function terbatas(key){ return RESTRICTED.has(key); }
   let activeCharts = [];
   function destroyCharts(){ activeCharts.forEach(c=>{ try{c.destroy();}catch(e){} }); activeCharts = []; }
 
@@ -27,57 +27,106 @@
   function clearTimers(){ activeTimers.forEach(t=> clearInterval(t)); activeTimers = []; }
   function addTimer(t){ activeTimers.push(t); return t; }
 
-  // ---- Persistence for data added through the prototype -------------------
-  // Purwarupa tidak memiliki backend; data baru disimpan pada localStorage
-  // browser (per perangkat/browser) sehingga tetap ada saat halaman dimuat
-  // ulang, tanpa mengubah data dummy asal pada assets/js/data.js.
-  const LS_KEY = 'simaset_user_records_v1';
-  let USER_RECORDS = {};
+  // ---- Persistensi melalui API -------------------------------------------
+  // Setiap perubahan dikirim ke server dan disimpan di basis data. Salinan
+  // dalam memori (D) disegarkan agar tampilan langsung mengikuti tanpa perlu
+  // memuat ulang seluruh data.
   function getDatasetArray(key){
-    // supports dot-path for nested datasets, e.g. "governance.improvement"
+    // mendukung jalur bertitik, mis. "governance.improvement"
     return key.split('.').reduce((o,k)=> (o ? o[k] : undefined), D);
   }
-  function loadUserRecords(){
-    try{ USER_RECORDS = JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ USER_RECORDS = {}; }
-    Object.keys(USER_RECORDS).forEach(key=>{
-      const arr = getDatasetArray(key);
-      if(Array.isArray(arr) && Array.isArray(USER_RECORDS[key])) arr.push(...USER_RECORDS[key]);
-    });
+  function idKeyOf(datasetKey){
+    const peta = {
+      assets:'asset_id', asset_tags:'tag_id', locations:'location_id', buildings:'id',
+      categories:'code', custodians:'custodian_id', sensus_plans:'sensus_id',
+      sensus_items:'item_id', mutasi:'request_id', jml_events:'event_id',
+      work_orders:'wo_id', inspections:'inspection_id', risks:'risk_id',
+      asset_kpis:'kpi_id', costs:'cost_id', recon_batches:'batch_id',
+      recon_items:'item_id', cyber_assets:'cyber_asset_id', access_logs:'log_id',
+      sanitizations:'sanitization_id', disposals:'disposal_id', audits:'audit_id',
+      documents:'document_id', reports:'report_id', users:'user_id',
+      iot_devices:'device_id', iot_alerts:'alert_id', integrations:'id',
+      sync_logs:'log_id', approvals:'approval_id',
+    };
+    if(peta[datasetKey]) return peta[datasetKey];
+    return datasetKey.indexOf('governance.') === 0 ? 'id' : 'id';
   }
-  function saveUserRecord(datasetKey, record){
+
+  // Menyisipkan hasil dari server ke salinan dalam memori.
+  function cacheInsert(datasetKey, record){
+    const arr = getDatasetArray(datasetKey);
+    if(Array.isArray(arr)) arr.push(record);
+  }
+  function cacheReplace(datasetKey, id, record){
     const arr = getDatasetArray(datasetKey);
     if(!Array.isArray(arr)) return;
-    arr.push(record);
-    if(!USER_RECORDS[datasetKey]) USER_RECORDS[datasetKey] = [];
-    USER_RECORDS[datasetKey].push(record);
-    try{ localStorage.setItem(LS_KEY, JSON.stringify(USER_RECORDS)); }catch(e){ /* storage unavailable */ }
+    const k = idKeyOf(datasetKey);
+    const i = arr.findIndex(r=> String(r[k]) === String(id));
+    if(i >= 0) arr[i] = record; else arr.push(record);
   }
-  loadUserRecords();
+  function cacheRemove(datasetKey, id){
+    const arr = getDatasetArray(datasetKey);
+    if(!Array.isArray(arr)) return;
+    const k = idKeyOf(datasetKey);
+    const i = arr.findIndex(r=> String(r[k]) === String(id));
+    if(i >= 0) arr.splice(i, 1);
+  }
+
+  // Menangani galat API secara seragam: sesi habis -> balik ke halaman masuk.
+  function handleApiError(err){
+    if(err instanceof API.ApiError && err.needsLogin){
+      toast('Sesi Anda sudah berakhir. Mengalihkan ke halaman masuk…');
+      setTimeout(()=>{ window.location.href = '../index.html'; }, 900);
+      return;
+    }
+    toast((err && err.message) || 'Permintaan ke server gagal.');
+  }
+
+  async function apiCreate(datasetKey, values){
+    const res = await API.create(datasetKey, values);
+    cacheInsert(datasetKey, res.data);
+    return res.data;
+  }
+  async function apiUpdate(datasetKey, id, values){
+    const res = await API.update(datasetKey, id, values);
+    cacheReplace(datasetKey, id, res.data);
+    return res.data;
+  }
+  async function apiDelete(datasetKey, id){
+    await API.remove(datasetKey, id);
+    cacheRemove(datasetKey, id);
+  }
+  // Memuat ulang satu dataset dari server tanpa mengganti acuan arraynya,
+  // sehingga halaman yang sedang terbuka tetap melihat data yang sama.
+  async function refreshDataset(datasetKey){
+    try{
+      const res = await API.list(datasetKey);
+      const arr = getDatasetArray(datasetKey);
+      if(Array.isArray(arr) && Array.isArray(res.data)){
+        arr.length = 0;
+        arr.push(...res.data);
+      }
+    }catch(e){ /* penyegaran gagal bukan alasan membatalkan simpan */ }
+  }
 
   // ---- Foto aset ----------------------------------------------------------
-  // Foto aset master disimpan pada localStorage terpisah agar catatan transaksi
-  // tetap ringkas. Aset yang belum difoto memakai ilustrasi kategori.
-  const PHOTO_KEY = 'simaset_asset_photos_v1';
-  let ASSET_PHOTOS = {};
-  try{ ASSET_PHOTOS = JSON.parse(localStorage.getItem(PHOTO_KEY)) || {}; }catch(e){ ASSET_PHOTOS = {}; }
+  // Foto kini tersimpan sebagai berkas di server; basis data hanya menyimpan
+  // jalurnya pada kolom `photo`. Aset yang belum difoto memakai ilustrasi
+  // kategori yang dibuat di sisi peramban.
+  function assetById2(assetId){ return D.assets.find(a=>a.asset_id===assetId); }
 
-  function setAssetPhoto(assetId, dataUrl){
-    const prev = ASSET_PHOTOS[assetId];
-    ASSET_PHOTOS[assetId] = dataUrl;
-    try{
-      localStorage.setItem(PHOTO_KEY, JSON.stringify(ASSET_PHOTOS));
-      return true;
-    }catch(e){
-      if(prev===undefined) delete ASSET_PHOTOS[assetId]; else ASSET_PHOTOS[assetId] = prev;
-      toast('Penyimpanan browser penuh — foto tidak dapat disimpan.');
-      return false;
-    }
+  // Mengirim foto baru ke server, lalu menyegarkan salinan dalam memori.
+  async function setAssetPhoto(assetId, dataUrl){
+    const rec = await apiUpdate('assets', assetId, { photo: dataUrl });
+    return !!(rec && rec.photo);
   }
-  function clearAssetPhoto(assetId){
-    delete ASSET_PHOTOS[assetId];
-    try{ localStorage.setItem(PHOTO_KEY, JSON.stringify(ASSET_PHOTOS)); }catch(e){}
+  async function clearAssetPhoto(assetId){
+    await apiUpdate('assets', assetId, { photo: null });
   }
-  function hasAssetPhoto(assetId){ return !!ASSET_PHOTOS[assetId]; }
+  function hasAssetPhoto(assetId){
+    const a = assetById2(assetId);
+    return !!(a && safePhotoSrc(a.photo));
+  }
 
   // Ilustrasi kategori untuk aset yang belum memiliki foto
   const CATEGORY_ICON = {
@@ -119,12 +168,28 @@
   // dari localStorage yang dapat disunting pemilik peramban; tanpa penyaringan
   // ini sebuah nilai berisi tanda kutip dapat keluar dari atribut (XSS).
   const DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);[a-z0-9.+=;,%-]*base64,[A-Za-z0-9+/=]+$|^data:image\/svg\+xml;charset=utf-8,[^"'<>]*$/i;
+  // Jalur berkas foto yang disimpan server. Polanya sengaja sempit (nama
+  // berkas selalu 32 digit heksadesimal yang dibuat server) sehingga nilai
+  // apa pun dari luar tidak dapat menyelipkan tanda kutip ke dalam atribut.
+  const STORED_PHOTO_RE = /^uploads\/photos\/[a-f0-9]{32}\.jpg$/;
   function safePhotoSrc(value){
-    return (typeof value === 'string' && DATA_IMAGE_RE.test(value)) ? value : '';
+    if(typeof value !== 'string' || value === '') return '';
+    if(DATA_IMAGE_RE.test(value)) return value;
+    // Halaman aplikasi berada di /app/, berkas unggahan di akar situs.
+    if(STORED_PHOTO_RE.test(value)) return '../' + value;
+    return '';
+  }
+  // Nilai foto untuk dikirim kembali ke server: tanpa awalan '../' agar jalur
+  // yang sudah tersimpan dikenali server dan fotonya tidak ikut terhapus
+  // ketika pengguna hanya mengubah kolom lain.
+  function rawPhotoValue(value){
+    if(typeof value !== 'string' || value === '') return '';
+    if(DATA_IMAGE_RE.test(value) || STORED_PHOTO_RE.test(value)) return value;
+    return '';
   }
   function assetPhotoSrc(asset){
     if(!asset) return '';
-    return safePhotoSrc(ASSET_PHOTOS[asset.asset_id]) || assetIllustration(asset);
+    return safePhotoSrc(asset.photo) || assetIllustration(asset);
   }
   // Dipakai oleh konfigurasi kolom pada modules.js (di luar closure ini)
   window.assetPhotoSrc = assetPhotoSrc;
@@ -292,11 +357,11 @@
   qs('#user-role').textContent = CURRENT_USER.role;
   qs('#user-avatar').textContent = initials(CURRENT_USER.name) || 'U';
 
-  qs('#user-menu').addEventListener('click', ()=>{
-    if(confirm('Keluar dari SIMASET BMN?')){
-      sessionStorage.removeItem('simaset_user');
-      window.location.href = '../index.html';
-    }
+  qs('#user-menu').addEventListener('click', async ()=>{
+    if(!confirm('Keluar dari SIMASET BMN?')) return;
+    // Sesi dihapus di server; cookie dibatalkan oleh respons logout.
+    try{ await API.logout(); }catch(e){ /* tetap keluar walau jaringan gagal */ }
+    window.location.href = '../index.html';
   });
   qs('#notif-btn').addEventListener('click', ()=> toast('3 notifikasi baru: 1 overdue WO, 2 exception rekonsiliasi.'));
   qs('#settings-btn').addEventListener('click', ()=> toast('Pengaturan akun tidak tersedia pada purwarupa ini.'));
@@ -378,6 +443,8 @@
   function mountListPage(config, options){
     options = options || {};
     const rows = options.rows || D[config.dataset] || [];
+    // Kunci FORM_CONFIGS untuk modul ini (dipakai tombol Tambah/Ubah/Hapus).
+    const formKind = options.formKind || options.moduleId || null;
     const state = { search:'', filters:{}, page:1, pageSize: options.pageSize || 8 };
     let lastFiltered = rows;
 
@@ -408,10 +475,14 @@
 
       // table
       const cols = config.columns;
-      let thead = '<tr>' + cols.map(c=>`<th>${esc(c.label)}</th>`).join('') + '</tr>';
+      // Kolom aksi hanya muncul bila modul ini punya form dan peran berhak ubah.
+      const bolehUbah = !!(formKind && FORM_CONFIGS[formKind] && canWrite(formModule(formKind)));
+      let thead = '<tr>' + cols.map(c=>`<th>${esc(c.label)}</th>`).join('')
+        + (bolehUbah ? '<th class="th-actions">Aksi</th>' : '') + '</tr>';
       let tbody = '';
+      const spanKosong = cols.length + (bolehUbah ? 1 : 0);
       if(!pageRows.length){
-        tbody = `<tr><td colspan="${cols.length}"><div class="table-empty">${icon('search')}<div>Tidak ada data yang cocok dengan filter saat ini.</div></div></td></tr>`;
+        tbody = `<tr><td colspan="${spanKosong}"><div class="table-empty">${icon('search')}<div>Tidak ada data yang cocok dengan filter saat ini.</div></div></td></tr>`;
       } else {
         pageRows.forEach(r=>{
           tbody += `<tr data-id="${esc(r[config.idKey])}">` + cols.map(c=>{
@@ -419,14 +490,38 @@
             if(c.badge){ return `<td>${badgeHtml(val, c.badge(r))}</td>`; }
             if(c.html){ return `<td class="${c.cls||''}">${val||''}</td>`; }
             return `<td class="${c.cls||''}">${esc(val==null?'-':val)}</td>`;
-          }).join('') + '</tr>';
+          }).join('')
+          + (bolehUbah ? `<td class="cell-actions">
+              <button class="row-act" data-act="edit" title="Ubah data" aria-label="Ubah">${icon('edit')}</button>
+              <button class="row-act row-act-danger" data-act="del" title="Hapus data" aria-label="Hapus">${icon('trash')}</button>
+            </td>` : '')
+          + '</tr>';
         });
       }
       qs('#list-table-head').innerHTML = thead;
       qs('#list-table-body').innerHTML = tbody;
       qs('#list-table-body').querySelectorAll('tr[data-id]').forEach(tr=>{
+        const rowOf = ()=> rows.find(r=>String(r[config.idKey])===tr.dataset.id);
+
+        tr.querySelectorAll('button[data-act]').forEach(b=>{
+          b.addEventListener('click', (ev)=>{
+            // Jangan sampai klik tombol juga membuka drawer detail.
+            ev.stopPropagation();
+            const row = rowOf();
+            if(!row) return;
+            const id = row[config.idKey];
+            const nama = row.name || row.asset_name || row[config.idKey];
+            if(b.dataset.act === 'edit'){
+              openEditForm(formKind, id, row, ()=> draw());
+            } else {
+              deleteRecordUI(formKind, FORM_CONFIGS[formKind].dataset, id, nama, ()=> draw());
+            }
+          });
+        });
+
         tr.addEventListener('click', ()=>{
-          const row = rows.find(r=>String(r[config.idKey])===tr.dataset.id);
+          const row = rowOf();
+          if(!row) return;
           if(config.detailIsAsset) openAssetDetail(row.asset_id);
           else if(config.detailIsTag) openTagDetail(row);
           else if(config.detailIsReport) openReportViewer(row);
@@ -469,7 +564,7 @@
       </div>`;
 
     // Tombol tambah hanya untuk peran dengan kewenangan ubah pada modul ini
-    const hasAddForm = !!FORM_CONFIGS[options.moduleId] && canWrite(options.moduleId);
+    const hasAddForm = !!(formKind && FORM_CONFIGS[formKind]) && canWrite(formModule(formKind));
     const readOnlyHint = options.moduleId && canRead(options.moduleId) && !canWrite(options.moduleId)
       ? `<span class="badge b-blue" style="padding:6px 12px;font-size:12px">${icon('eye')}Akses Lihat Saja</span>` : '';
     qs('#content').innerHTML = `
@@ -506,7 +601,7 @@
       exportCSV(`simaset-${idOrTitle}.csv`, config.columns.filter(c=>!c.html), lastFiltered);
     });
     const addBtn = qs('#add-btn');
-    if(addBtn) addBtn.addEventListener('click', ()=> openAddForm(options.moduleId || config.title));
+    if(addBtn) addBtn.addEventListener('click', ()=> openAddForm(formKind));
 
     draw();
     if(options.afterMount) options.afterMount(rows, draw);
@@ -565,37 +660,26 @@
         {key:'status', label:'Status', type:'select', default:'In Use', options:()=>staticOpts(['In Use','Reserved','Under Maintenance','In Storage'])},
         {key:'photo', label:'Foto Aset', type:'photo', full:true},
       ],
+      // Nomor aset, BMN UID, kode kategori, penanda sensitif, label kondisi,
+      // serta pembuatan tag QR dihitung server (lihat api/lib/records.php).
+      // Form hanya mengirim nilai yang benar-benar diisi pengguna.
       build(v){
-        const id = nextId(D.assets, 'asset_id');
-        if(v.photo) setAssetPhoto(id, v.photo);
-        const seq = D.assets.length + 1;
-        const kodeBarang = '3.9.9.99';
-        const nup = String(seq).padStart(6,'0');
-        const satker = (D.assets[0] && D.assets[0].satker) || '677321';
-        const tagId = nextId(D.asset_tags, 'tag_id');
-        const catCode = (D.categories.find(c=>c.name===v.category)||{}).code || 'BMN-UM';
-        const loc = D.locations.find(l=>l.label===v.location_label);
-        const cust = D.custodians.find(c=>c.name===v.custodian_name);
-        const condScore = parseInt(v.condition_score,10)||4;
-        const condLabels = {1:'1 - Rusak Berat',2:'2 - Kurang',3:'3 - Cukup',4:'4 - Baik',5:'5 - Sangat Baik'};
         return {
-          asset_id:id, bmn_uid:`${satker}-${kodeBarang}-${nup}`, satker, kode_barang:kodeBarang, nup,
-          name:v.name, category:v.category, category_code:catCode, brand:v.brand||'-', model:v.model||'-', serial:v.serial||'-',
-          year:parseInt(v.year,10)||new Date().getFullYear(), value:parseInt(v.value,10)||0,
-          warranty_until:'-', location_id: loc?loc.location_id:'-', location_label:v.location_label,
-          custodian_id: cust?cust.custodian_id:'-', custodian_name:v.custodian_name||'-', unit: cust?cust.unit:'-',
-          condition_score:condScore, condition_label:condLabels[condScore], criticality:v.criticality||'Medium',
-          risk_level:'Medium', status:v.status||'In Use', tag_id:tagId, sensitive:catCode==='CYB',
+          name: v.name, category: v.category,
+          brand: v.brand || '-', model: v.model || '-', serial: v.serial || '-',
+          year: parseInt(v.year,10) || new Date().getFullYear(),
+          value: parseInt(v.value,10) || 0,
+          location_label: v.location_label,
+          custodian_name: v.custodian_name || null,
+          condition_score: parseInt(v.condition_score,10) || 4,
+          criticality: v.criticality || 'Medium',
+          status: v.status || 'In Use',
+          photo: v.photo || null,
         };
       },
-      afterAdd(record){
-        saveUserRecord('asset_tags', {
-          tag_id: record.tag_id, asset_id: record.asset_id, bmn_uid: record.bmn_uid,
-          qr_payload:`https://simaset.semestateknologiutama.com/t/${record.tag_id}`,
-          material:'Standard PVC', print_batch:'BATCH-BARU', status:'Belum Dicetak', printed_at: todayStr(),
-        });
-      },
       successMsg:'Aset baru berhasil didaftarkan (tag QR/Barcode otomatis dibuat).',
+      // Tag dibuat server; muat ulang daftar tag agar tampilan ikut mutakhir.
+      async afterSave(record){ await refreshDataset('asset_tags'); },
       onDone(record){ route(); setTimeout(()=> openAssetDetail(record.asset_id), 250); },
     },
 
@@ -861,22 +945,18 @@
         {key:'file', label:'Nama File Sumber', type:'text', placeholder:'mis. export_triwulan_4_2026.xlsx'},
         {key:'status', label:'Status', type:'select', default:'Berjalan', options:()=>staticOpts(['Berjalan','Menunggu Verifikasi','Signed-off'])},
       ],
+      // Item pembanding dibuat server saat batch tersimpan, beserta
+      // penghitungan total/matched/exception-nya.
       build(v){
-        const batchId = nextId(D.recon_batches,'batch_id');
-        const sample = [...D.assets].sort(()=>Math.random()-0.5).slice(0, Math.min(10, D.assets.length));
-        let matched = 0;
-        sample.forEach(a=>{
-          const isMatch = Math.random() > 0.25;
-          if(isMatch) matched++;
-          saveUserRecord('recon_items', {
-            item_id: nextId(D.recon_items,'item_id'), batch_id: batchId, bmn_uid:a.bmn_uid, asset_name:a.name,
-            match_status: isMatch ? 'Matched' : ['Unmatched','Mismatch','Duplicate','Missing'][Math.floor(Math.random()*4)],
-            exception_note: isMatch ? null : 'Perlu verifikasi lanjutan',
-          });
-        });
-        return { batch_id:batchId, period:v.period, source:v.source||'SAKTI/SIMAN Export', file:v.file||`export_${batchId}.xlsx`, status:v.status||'Berjalan', total_items:sample.length, matched, exception: sample.length-matched };
+        return {
+          period: v.period,
+          source: v.source || 'SAKTI/SIMAN Export',
+          file: v.file || '',
+          status: v.status || 'Berjalan',
+        };
       },
-      successMsg:'Batch rekonsiliasi baru berhasil dibuat beserta item simulasinya.',
+      successMsg:'Batch rekonsiliasi baru berhasil dibuat beserta item pembandingnya.',
+      async afterSave(record){ await refreshDataset('recon_items'); },
     },
 
     'cyber-asset': {
@@ -931,13 +1011,19 @@
         {key:'unit', label:'Unit Kerja', type:'select', options:()=>staticOpts(D.units||[])},
         {key:'status', label:'Status Akun', type:'select', default:'Aktif', options:()=>staticOpts(['Aktif','Nonaktif','Cuti'])},
         {key:'mfa', label:'Autentikasi Ganda (MFA)', type:'select', default:'Nonaktif', options:()=>staticOpts(['Aktif','Nonaktif'])},
+        // Kata sandi dikirim ke server untuk di-hash; tidak pernah ditampilkan
+        // kembali. Dibiarkan kosong saat mengubah data berarti tidak diganti.
+        {key:'password', label:'Kata Sandi (min. 10 karakter)', type:'password', full:true,
+         placeholder:'Kosongkan bila tidak ingin mengubah'},
       ],
       build(v){
-        return {
-          user_id: nextId(D.users,'user_id'), name:v.name, email:v.email, role:v.role,
-          nip:v.nip||'-', unit:v.unit||'-', status:v.status||'Aktif', mfa:v.mfa||'Nonaktif',
-          last_login:'Belum pernah', created_at: todayStr(), akun_demo:'Tidak',
+        const out = {
+          name:v.name, email:v.email, role:v.role,
+          nip:v.nip || '-', unit:v.unit || '-',
+          status:v.status || 'Aktif', mfa:v.mfa || 'Nonaktif',
         };
+        if(String(v.password || '').trim() !== '') out.password = v.password;
+        return out;
       },
       successMsg:'Pengguna baru berhasil ditambahkan. Hak akses mengikuti matriks peran yang dipilih.',
     },
@@ -964,7 +1050,7 @@
         </div>
         <div class="photo-hint">Pada perangkat bergerak tombol ini membuka kamera. Foto dikompres otomatis sebelum disimpan.</div>
         <input type="file" accept="image/*" capture="environment" data-photo-input="${f.key}" hidden>
-        <input type="hidden" data-field="${f.key}" value="${pre||''}">
+        <input type="hidden" data-field="${f.key}" value="${esc(rawPhotoValue(pre))}">
       </div>`;
     } else if(f.type==='textarea'){
       control = `<textarea class="input" rows="3" data-field="${f.key}" placeholder="${esc(f.placeholder||'')}">${esc(defVal)}</textarea>`;
@@ -984,13 +1070,45 @@
     return el ? el.value : '';
   }
 
-  function openAddForm(kind, prefill){
+  // Modul RBAC pengampu sebuah form, untuk kunci yang namanya berbeda.
+  const FORM_MODULE = {
+    'sensus-plan':'sensus', 'recon-batch':'reconciliation', 'cyber-asset':'cyber',
+    'master-location':'master-data', 'governance-improvement':'governance',
+  };
+  function formModule(kind){ return FORM_MODULE[kind] || kind; }
+
+  // Mengumpulkan nilai form dan menandai kolom wajib yang kosong.
+  function collectForm(root, cfg){
+    let ok = true;
+    const values = {};
+    cfg.fields.forEach(f=>{
+      const val = readFormField(root, f);
+      values[f.key] = val;
+      const wrap = root.querySelector(`[data-field-wrap="${f.key}"]`);
+      const isEmpty = String(val).trim()==='';
+      if(f.required && isEmpty){ if(wrap) wrap.classList.add('has-error'); ok = false; }
+      else if(wrap) wrap.classList.remove('has-error');
+    });
+    return ok ? values : null;
+  }
+
+  // Satu drawer dipakai untuk tambah maupun ubah; bedanya hanya pada judul
+  // dan ke mana nilainya dikirim.
+  function openRecordForm(kind, opts){
+    opts = opts || {};
     const cfg = FORM_CONFIGS[kind];
-    if(!cfg){ toast('Form tambah data untuk modul ini belum tersedia pada purwarupa.'); return; }
+    if(!cfg){ toast('Form untuk modul ini belum tersedia.'); return; }
+    const modul = formModule(kind);
+    if(!canWrite(modul)){ toast(`Peran ${ROLE} tidak berwenang mengubah data pada modul ini.`); return; }
+
+    const ubah = !!opts.id;
+    const prefill = opts.prefill || null;
     const fieldsHtml = cfg.fields.map(f=> renderFormField(f, prefill)).join('');
+    const judul = ubah ? (cfg.editTitle || cfg.title.replace(/^(Tambah|Buat|Catat|Ajukan|Unggah|Terbitkan)\b/i, 'Ubah')) : cfg.title;
+
     openDrawer(`
       <div class="drawer-head">
-        <div><h2>${esc(cfg.title)}</h2><div class="meta">Data tersimpan pada sesi/browser ini (localStorage) — bukan basis data produksi</div></div>
+        <div><h2>${esc(judul)}</h2><div class="meta">${ubah ? `Mengubah ${esc(opts.id)} — perubahan disimpan ke basis data` : 'Data disimpan ke basis data di server'}</div></div>
         <button class="drawer-close">${icon('x')}</button>
       </div>
       <div class="drawer-body">
@@ -998,31 +1116,95 @@
       </div>
       <div class="drawer-foot">
         <button class="btn btn-outline btn-sm" id="add-cancel">Batal</button>
-        <button class="btn btn-primary btn-sm" id="add-submit">${icon('checkCircle')}Simpan</button>
+        <button class="btn btn-primary btn-sm" id="add-submit">${icon('checkCircle')}${ubah ? 'Simpan Perubahan' : 'Simpan'}</button>
       </div>
     `);
     const root = qs('#drawer-root');
     bindPhotoFields(root);
     qs('#add-cancel').addEventListener('click', closeDrawer);
-    qs('#add-submit').addEventListener('click', ()=>{
-      let ok = true;
-      const values = {};
-      cfg.fields.forEach(f=>{
-        const val = readFormField(root, f);
-        values[f.key] = val;
-        const wrap = root.querySelector(`[data-field-wrap="${f.key}"]`);
-        const isEmpty = String(val).trim()==='';
-        if(f.required && isEmpty){ wrap.classList.add('has-error'); ok=false; }
-        else wrap.classList.remove('has-error');
-      });
-      if(!ok){ toast('Mohon lengkapi kolom bertanda (*).'); return; }
-      const record = cfg.build(values);
-      saveUserRecord(cfg.dataset, record);
-      if(cfg.afterAdd) cfg.afterAdd(record);
-      closeDrawer();
-      toast(cfg.successMsg || 'Data baru berhasil ditambahkan.');
-      if(cfg.onDone) cfg.onDone(record); else route();
+
+    const submit = qs('#add-submit');
+    submit.addEventListener('click', async ()=>{
+      const values = collectForm(root, cfg);
+      if(!values){ toast('Mohon lengkapi kolom bertanda (*).'); return; }
+
+      submit.disabled = true;
+      const label = submit.innerHTML;
+      submit.innerHTML = ubah ? 'Menyimpan…' : 'Menyimpan…';
+      try{
+        const payload = cfg.build(values);
+        const record = ubah
+          ? await apiUpdate(cfg.dataset, opts.id, payload)
+          : await apiCreate(cfg.dataset, payload);
+        if(cfg.afterSave) await cfg.afterSave(record, ubah);
+        closeDrawer();
+        toast(ubah ? 'Perubahan berhasil disimpan.' : (cfg.successMsg || 'Data baru berhasil ditambahkan.'));
+        if(opts.onDone) opts.onDone(record);
+        else if(!ubah && cfg.onDone) cfg.onDone(record);
+        else route();
+      }catch(err){
+        submit.disabled = false;
+        submit.innerHTML = label;
+        handleApiError(err);
+      }
     });
+  }
+
+  function openAddForm(kind, prefill){ openRecordForm(kind, { prefill }); }
+
+  // Beberapa modul membangun tabelnya sendiri (sensus, rekonsiliasi, aset
+  // siber, governance). Daripada menyalin markup aksi ke tiap template,
+  // kolom Ubah/Hapus ditempelkan ke DOM setelah tabel dirender.
+  function attachRowActions(tbodySel, formKind, idKey, rerender){
+    const tbody = qs(tbodySel);
+    if(!tbody) return;
+    const cfg = FORM_CONFIGS[formKind];
+    if(!cfg || !canWrite(formModule(formKind))) return;
+
+    const table = tbody.closest('table');
+    const headRow = table ? table.querySelector('thead tr') : null;
+    if(headRow && !headRow.querySelector('.th-actions')){
+      const th = document.createElement('th');
+      th.className = 'th-actions';
+      th.textContent = 'Aksi';
+      headRow.appendChild(th);
+    }
+
+    tbody.querySelectorAll('tr[data-id]').forEach(tr=>{
+      if(tr.querySelector('.cell-actions')) return;
+      const td = document.createElement('td');
+      td.className = 'cell-actions';
+      td.innerHTML =
+        `<button class="row-act" data-act="edit" title="Ubah data" aria-label="Ubah">${icon('edit')}</button>` +
+        `<button class="row-act row-act-danger" data-act="del" title="Hapus data" aria-label="Hapus">${icon('trash')}</button>`;
+      tr.appendChild(td);
+
+      td.querySelectorAll('button[data-act]').forEach(b=>{
+        b.addEventListener('click', (ev)=>{
+          ev.stopPropagation();   // jangan buka drawer detail
+          const id = tr.dataset.id;
+          const arr = getDatasetArray(cfg.dataset) || [];
+          const row = arr.find(r=> String(r[idKey]) === String(id));
+          if(!row) return;
+          const nama = row.name || row.area || row.period || row.title || id;
+          if(b.dataset.act === 'edit') openEditForm(formKind, id, row, rerender);
+          else deleteRecordUI(formKind, cfg.dataset, id, nama, rerender);
+        });
+      });
+    });
+  }
+  function openEditForm(kind, id, row, onDone){ openRecordForm(kind, { id, prefill: row, onDone }); }
+
+  // Hapus satu baris, dengan konfirmasi yang menyebut identitasnya.
+  async function deleteRecordUI(kind, dataset, id, label, afterDone){
+    const modul = formModule(kind);
+    if(!canWrite(modul)){ toast(`Peran ${ROLE} tidak berwenang menghapus data pada modul ini.`); return; }
+    if(!confirm(`Hapus ${label || id}?\n\nTindakan ini tidak dapat dibatalkan.`)) return;
+    try{
+      await apiDelete(dataset, id);
+      toast(`${label || id} berhasil dihapus.`);
+      if(afterDone) afterDone(); else route();
+    }catch(err){ handleApiError(err); }
   }
 
   // ---- CSV export (real client-side download) --------------------------------
@@ -1271,18 +1453,31 @@
       if(setBtn) setBtn.addEventListener('click', async ()=>{
         const dataUrl = await pickPhoto();
         if(!dataUrl) return;
-        if(setAssetPhoto(a.asset_id, dataUrl)){
+        setBtn.disabled = true;
+        try{
+          // Foto diunggah ke server, disandikan ulang di sana, lalu jalur
+          // berkasnya tersimpan pada data aset.
+          await setAssetPhoto(a.asset_id, dataUrl);
           toast(`Foto aset ${a.asset_id} berhasil disimpan.`);
           qs('#asset-tab-body').innerHTML = tabBody('ringkasan');
           bindPhotoActions();
+        }catch(err){
+          setBtn.disabled = false;
+          handleApiError(err);
         }
       });
       const delBtn = qs('#asset-photo-del');
-      if(delBtn) delBtn.addEventListener('click', ()=>{
-        clearAssetPhoto(a.asset_id);
-        toast('Foto aset dihapus — kembali memakai ilustrasi kategori.');
-        qs('#asset-tab-body').innerHTML = tabBody('ringkasan');
-        bindPhotoActions();
+      if(delBtn) delBtn.addEventListener('click', async ()=>{
+        delBtn.disabled = true;
+        try{
+          await clearAssetPhoto(a.asset_id);
+          toast('Foto aset dihapus — kembali memakai ilustrasi kategori.');
+          qs('#asset-tab-body').innerHTML = tabBody('ringkasan');
+          bindPhotoActions();
+        }catch(err){
+          delBtn.disabled = false;
+          handleApiError(err);
+        }
       });
     }
     bindPhotoActions();
@@ -1498,6 +1693,14 @@
     root.addEventListener('click', e=>{ if(e.target===root) root.remove(); });
   }
 
+  // Membungkus kartu grafik dalam grid; grid tidak dirender bila seluruh
+  // kartunya disembunyikan karena hak akses.
+  function chartGridHtml(cards){
+    const isi = cards.filter(c=> c);
+    if(!isi.length) return '';
+    return `<div class="grid-2" style="margin-bottom:16px">${isi.join('')}</div>`;
+  }
+
   // ---- Chart helpers ---------------------------------------------------------
   const CHART_PALETTE = ['#2563eb','#c8942c','#16a34a','#dc2626','#7c3aed','#0891b2','#64748b','#d97706'];
   function makeChart(ctx, cfg){ const c = new Chart(ctx, cfg); activeCharts.push(c); return c; }
@@ -1509,7 +1712,10 @@
   function renderDashboard(){
     const assets = D.assets;
     const totalAssets = assets.length;
-    const avgAHI = (D.asset_kpis.reduce((a,r)=>a+r.ahi,0)/D.asset_kpis.length).toFixed(1);
+    // Pembagi dijaga: peran yang tidak berhak membaca sebuah modul menerima
+    // dataset kosong dari server, sehingga rata-rata tanpa penjaga akan NaN.
+    const avgAHI = D.asset_kpis.length
+      ? (D.asset_kpis.reduce((a,r)=>a+r.ahi,0)/D.asset_kpis.length).toFixed(1) : '—';
     const criticalAssets = assets.filter(a=>a.criticality==='Critical').length;
     const openRisks = D.risks.filter(r=>r.level==='Critical'||r.level==='High').length;
     const anomalyCount = D.sensus_items.filter(s=>s.result==='Anomali').length;
@@ -1517,14 +1723,17 @@
     const pmTotal = D.work_orders.filter(w=>w.type==='Preventive').length;
     const pmCompliance = pmTotal? Math.round(100*pmDone/pmTotal) : 0;
 
+    // Setiap kartu menyebut modul sumbernya. Kartu yang sumbernya tidak boleh
+    // dibaca peran ini TIDAK ditampilkan — lebih jujur daripada menunjukkan
+    // angka nol yang seolah-olah berarti "tidak ada data".
     const kpis = [
-      {label:'Total Aset Terdaftar', value: totalAssets, icon:'box', tint:'blue', trend:{dir:'up',text:'+4 bulan ini'}},
-      {label:'Rata-rata Asset Health (AHI)', value: avgAHI, icon:'activity', tint:'green', trend:{dir:'up',text:'+1.2 pts'}},
-      {label:'Aset Kritis', value: criticalAssets, icon:'alertTriangle', tint:'red'},
-      {label:'Risiko High/Critical', value: openRisks, icon:'shield', tint:'amber'},
-      {label:'Anomali Sensus', value: anomalyCount, icon:'search', tint:'violet'},
-      {label:'PM Compliance', value: pmCompliance+'%', icon:'wrench', tint:'gold'},
-    ];
+      {modul:'bmn-register', label:'Total Aset Terdaftar', value: totalAssets, icon:'box', tint:'blue', trend:{dir:'up',text:'+4 bulan ini'}},
+      {modul:'performance',  label:'Rata-rata Asset Health (AHI)', value: avgAHI, icon:'activity', tint:'green', trend:{dir:'up',text:'+1.2 pts'}},
+      {modul:'bmn-register', label:'Aset Kritis', value: criticalAssets, icon:'alertTriangle', tint:'red'},
+      {modul:'risk',         label:'Risiko High/Critical', value: openRisks, icon:'shield', tint:'amber'},
+      {modul:'sensus',       label:'Anomali Sensus', value: anomalyCount, icon:'search', tint:'violet'},
+      {modul:'maintenance',  label:'PM Compliance', value: pmCompliance+'%', icon:'wrench', tint:'gold'},
+    ].filter(k=> canRead(k.modul));
 
     // aggregates
     const byCategory = {};
@@ -1539,10 +1748,11 @@
     D.costs.forEach(c=> byCostType[c.cost_type]=(byCostType[c.cost_type]||0)+c.amount);
 
     // recent activity: merge mutasi + wo + disposals
+    // Hanya sumber yang boleh dibaca peran ini yang masuk ke garis waktu.
     const recent = [
-      ...D.mutasi.map(m=>({date:m.request_date, text:`Mutasi ${m.change_type} — ${m.asset_name}`, status:m.status, icon:'shuffle'})),
-      ...D.work_orders.filter(w=>w.status==='Selesai').map(w=>({date:w.completed_date||w.scheduled_date, text:`Work Order selesai — ${w.asset_name}`, status:w.status, icon:'wrench'})),
-      ...D.disposals.map(d=>({date:d.date, text:`Pengajuan disposal — ${d.asset_name}`, status:d.approval, icon:'trash'})),
+      ...(canRead('mutasi')      ? D.mutasi.map(m=>({date:m.request_date, text:`Mutasi ${m.change_type} — ${m.asset_name}`, status:m.status, icon:'shuffle'})) : []),
+      ...(canRead('maintenance') ? D.work_orders.filter(w=>w.status==='Selesai').map(w=>({date:w.completed_date||w.scheduled_date, text:`Work Order selesai — ${w.asset_name}`, status:w.status, icon:'wrench'})) : []),
+      ...(canRead('disposal')    ? D.disposals.map(d=>({date:d.date, text:`Pengajuan disposal — ${d.asset_name}`, status:d.approval, icon:'trash'})) : []),
     ].sort((a,b)=> (b.date||'').localeCompare(a.date||'')).slice(0,8);
 
     qs('#content').innerHTML = `
@@ -1550,31 +1760,30 @@
         <button class="btn btn-outline btn-sm" id="dash-export">${icon('download')}Unduh Ringkasan</button>`})}
       ${kpiCardsHtml(kpis)}
 
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="chart-card">
+      ${chartGridHtml([
+        canRead('bmn-register') ? `<div class="chart-card">
           <h3>Distribusi Aset per Kategori</h3>
           <div class="sub">Total ${totalAssets} aset terdaftar pada BMN Register</div>
           <div class="chart-wrap"><canvas id="chart-category"></canvas></div>
-        </div>
-        <div class="chart-card">
+        </div>` : '',
+        canRead('bmn-register') ? `<div class="chart-card">
           <h3>Distribusi Kondisi Aset</h3>
           <div class="sub">Skor kondisi 1 (rusak berat) – 5 (sangat baik)</div>
           <div class="chart-wrap"><canvas id="chart-condition"></canvas></div>
-        </div>
-      </div>
-
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="chart-card">
+        </div>` : '',
+      ])}
+      ${chartGridHtml([
+        canRead('performance') ? `<div class="chart-card">
           <h3>Rekomendasi Lifecycle Decision</h3>
-          <div class="sub">Berdasarkan Asset Health Index (AHI) — 30 aset tersampel</div>
+          <div class="sub">Berdasarkan Asset Health Index (AHI) — ${D.asset_kpis.length} aset tersampel</div>
           <div class="chart-wrap"><canvas id="chart-decision"></canvas></div>
-        </div>
-        <div class="chart-card">
+        </div>` : '',
+        canRead('risk') ? `<div class="chart-card">
           <h3>Sebaran Level Risiko</h3>
           <div class="sub">Risk register aktif — ${D.risks.length} entri</div>
           <div class="chart-wrap"><canvas id="chart-risk"></canvas></div>
-        </div>
-      </div>
+        </div>` : '',
+      ])}
 
       <div class="grid-2">
         <div class="panel">
@@ -1583,20 +1792,25 @@
           </div>
           <div class="panel-body" style="padding-top:14px">
             <div class="timeline">
-              ${recent.map(r=>`<div class="timeline-item"><div class="timeline-dot">${''}</div><div>
+              ${recent.length ? recent.map(r=>`<div class="timeline-item"><div class="timeline-dot">${''}</div><div>
                 <div class="t-title">${esc(r.text)}</div>
                 <div class="t-meta">${fmtDate(r.date)} · ${badgeHtml(r.status, badgeClassFor('status', r.status))}</div>
-              </div></div>`).join('')}
+              </div></div>`).join('')
+              : `<div class="photo-hint">Peran ${esc(ROLE)} tidak memiliki akses ke modul mutasi, pemeliharaan, maupun disposal, sehingga tidak ada aktivitas yang dapat ditampilkan di sini.</div>`}
             </div>
           </div>
         </div>
         <div class="panel">
           <div class="panel-head"><div><h3>Ringkasan Kepatuhan</h3><div class="sub">Governance &amp; audit snapshot</div></div></div>
           <div class="panel-body">
-            <div class="def-item" style="margin-bottom:14px"><span class="k">Temuan Audit Terbuka</span><span class="v">${D.audits.filter(a=>a.status==='Open').length} dari ${D.audits.length}</span></div>
-            <div class="def-item" style="margin-bottom:14px"><span class="k">Rekonsiliasi Signed-off</span><span class="v">${D.recon_batches.filter(b=>b.status==='Signed-off').length} dari ${D.recon_batches.length} batch</span></div>
-            <div class="def-item" style="margin-bottom:14px"><span class="k">Sertifikat Sanitasi Terverifikasi</span><span class="v">${D.sanitizations.filter(s=>s.verification==='Lulus Verifikasi').length} dari ${D.sanitizations.length}</span></div>
-            <div class="def-item"><span class="k">Objective KPI Tercapai</span><span class="v">${D.governance.objectives.filter(o=>{const t=parseFloat(o.target)||0, a=parseFloat(o.actual)||0; return t===0 ? a<=t : a>=t;}).length} dari ${D.governance.objectives.length}</span></div>
+            ${[
+              canRead('audit') ? ['Temuan Audit Terbuka', `${D.audits.filter(a=>a.status==='Open').length} dari ${D.audits.length}`] : null,
+              canRead('reconciliation') ? ['Rekonsiliasi Signed-off', `${D.recon_batches.filter(b=>b.status==='Signed-off').length} dari ${D.recon_batches.length} batch`] : null,
+              canRead('sanitization') ? ['Sertifikat Sanitasi Terverifikasi', `${D.sanitizations.filter(s=>s.verification==='Lulus Verifikasi').length} dari ${D.sanitizations.length}`] : null,
+              canRead('governance') ? ['Objective KPI Tercapai', `${(D.governance.objectives||[]).filter(o=>{const t=parseFloat(o.target)||0, a=parseFloat(o.actual)||0; return t===0 ? a<=t : a>=t;}).length} dari ${(D.governance.objectives||[]).length}`] : null,
+            ].filter(Boolean).map(([k,v],i,arr)=>
+              `<div class="def-item" ${i<arr.length-1?'style="margin-bottom:14px"':''}><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`
+            ).join('') || `<div class="photo-hint">Tidak ada indikator kepatuhan yang dapat diakses peran ${esc(ROLE)}.</div>`}
           </div>
         </div>
       </div>
@@ -1604,25 +1818,26 @@
 
     qs('#dash-export').addEventListener('click', ()=> toast('Simulasi ekspor ringkasan eksekutif (PDF).'));
 
-    makeChart(qs('#chart-category'), {
+    // Kartu yang disembunyikan tidak punya canvas; lewati pembuatan grafiknya.
+    if(qs('#chart-category')) makeChart(qs('#chart-category'), {
       type:'doughnut',
       data:{ labels:Object.keys(byCategory), datasets:[{data:Object.values(byCategory), backgroundColor:CHART_PALETTE, borderWidth:0}] },
       options:{ plugins:{legend:{position:'bottom', labels:{boxWidth:9, font:{size:10.5}}}}, cutout:'62%', maintainAspectRatio:false }
     });
-    makeChart(qs('#chart-condition'), {
+    if(qs('#chart-condition')) makeChart(qs('#chart-condition'), {
       type:'bar',
       data:{ labels:['1 - Rusak Berat','2 - Kurang','3 - Cukup','4 - Baik','5 - Sangat Baik'],
         datasets:[{data:[byCondition[1],byCondition[2],byCondition[3],byCondition[4],byCondition[5]],
           backgroundColor:['#dc2626','#d97706','#2563eb','#16a34a','#15803d'], borderRadius:6, maxBarThickness:36 }] },
       options:{ plugins:{legend:{display:false}}, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}} }
     });
-    makeChart(qs('#chart-decision'), {
+    if(qs('#chart-decision')) makeChart(qs('#chart-decision'), {
       type:'bar',
       data:{ labels:Object.keys(byDecision), datasets:[{data:Object.values(byDecision),
         backgroundColor:['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed'], borderRadius:6, maxBarThickness:40 }] },
       options:{ indexAxis:'y', plugins:{legend:{display:false}}, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}} }
     });
-    makeChart(qs('#chart-risk'), {
+    if(qs('#chart-risk')) makeChart(qs('#chart-risk'), {
       type:'polarArea',
       data:{ labels:Object.keys(byRiskLevel), datasets:[{data:Object.values(byRiskLevel),
         backgroundColor:['#dbeafe99','#bfdbfe99','#fde68a99','#fecaca99'] }] },
@@ -1761,6 +1976,7 @@
       </div>
     `;
     const _b_new_sensus = qs('#new-sensus'); if(_b_new_sensus) _b_new_sensus.addEventListener('click', ()=> openAddForm('sensus-plan'));
+    attachRowActions('#sensus-body', 'sensus-plan', 'sensus_id', renderSensus);
     qs('#sensus-body').querySelectorAll('tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>{
         const plan = plans.find(p=>p.sensus_id===tr.dataset.id);
@@ -1818,6 +2034,7 @@
       </div>
     `;
     const _b_new_batch = qs('#new-batch'); if(_b_new_batch) _b_new_batch.addEventListener('click', ()=> openAddForm('recon-batch'));
+    attachRowActions('#recon-body', 'recon-batch', 'batch_id', renderReconciliation);
     qs('#recon-body').querySelectorAll('tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>{
         const batch = batches.find(b=>b.batch_id===tr.dataset.id);
@@ -1878,6 +2095,7 @@
       </div>
     `;
     const _b_new_cyber_asset = qs('#new-cyber-asset'); if(_b_new_cyber_asset) _b_new_cyber_asset.addEventListener('click', ()=> openAddForm('cyber-asset'));
+    attachRowActions('#cyber-body', 'cyber-asset', 'cyber_asset_id', renderCyber);
     qs('#cyber-body').querySelectorAll('tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>{
         const ca = cyberAssets.find(c=>c.cyber_asset_id===tr.dataset.id);
@@ -1958,12 +2176,13 @@
           </div>
           <div class="table-wrap"><table class="data-table">
             <thead><tr><th>ID</th><th>Improvement</th><th>Terhubung</th><th>Status</th></tr></thead>
-            <tbody>${g.improvement.map(i=>`<tr><td class="cell-mono">${esc(i.id)}</td><td class="cell-strong">${esc(i.title)}</td><td class="cell-muted">${esc(i.linked)}</td><td>${badgeHtml(i.status, badgeClassFor('status', i.status))}</td></tr>`).join('')}</tbody>
+            <tbody id="gov-improve-body">${g.improvement.map(i=>`<tr data-id="${esc(i.id)}"><td class="cell-mono">${esc(i.id)}</td><td class="cell-strong">${esc(i.title)}</td><td class="cell-muted">${esc(i.linked)}</td><td>${badgeHtml(i.status, badgeClassFor('status', i.status))}</td></tr>`).join('')}</tbody>
           </table></div>
         </div>
       </div>
     `;
     const _b_new_improvement = qs('#new-improvement'); if(_b_new_improvement) _b_new_improvement.addEventListener('click', ()=> openAddForm('governance-improvement'));
+    attachRowActions('#gov-improve-body', 'governance-improvement', 'id', renderGovernance);
   }
 
   // =============================================================================
@@ -2215,22 +2434,25 @@
   // =============================================================================
   // MODUL: PERSETUJUAN (APPROVAL INBOX)
   // =============================================================================
-  const APV_KEY = 'simaset_approvals_v1';
-  function loadApprovalDecisions(){
-    try{ return JSON.parse(localStorage.getItem(APV_KEY)) || {}; }catch(e){ return {}; }
+  // Keputusan persetujuan disimpan di basis data. Kewenangannya diperiksa
+  // ulang di server: peran yang disyaratkan baris itu harus sama dengan peran
+  // sesi, dan peran tersebut harus punya tingkat 'A' pada modul terkait.
+  async function saveApprovalDecision(id, status){
+    const res = await API.decide(id, status);
+    cacheReplace('approvals', id, res.data);
+    return res.data;
   }
-  function saveApprovalDecision(id, status){
-    const all = loadApprovalDecisions();
-    all[id] = { status, by:CURRENT_USER.name, role:CURRENT_USER.role, at:todayStr() };
-    try{ localStorage.setItem(APV_KEY, JSON.stringify(all)); }catch(e){}
-  }
-  function approvalStatus(a, decisions){
-    return decisions[a.approval_id] ? decisions[a.approval_id].status : a.status;
+  function approvalStatus(a){
+    return a.status;
   }
 
   function renderApproval(){
-    const decisions = loadApprovalDecisions();
-    const all = (D.approvals || []).map(a=>({ ...a, _status: approvalStatus(a, decisions), _dec: decisions[a.approval_id] }));
+    // Status dan jejak keputusan kini datang langsung dari basis data.
+    const all = (D.approvals || []).map(a=>({
+      ...a,
+      _status: approvalStatus(a),
+      _dec: a.decided_by ? { by: a.decided_by, at: (a.decided_at || '').slice(0, 16) } : null,
+    }));
     // Antrean milik peran ini: item yang mensyaratkan peran tersebut dan
     // modul terkaitnya memang berkewenangan approve.
     const mine = all.filter(a=> a.role_required===ROLE && canApprove(a.modul));
@@ -2283,16 +2505,20 @@
         </table></div>
       </div>`;
 
-    document.querySelectorAll('.apv-ok').forEach(b=> b.addEventListener('click', ()=>{
-      saveApprovalDecision(b.dataset.id, 'Disetujui');
-      toast(`${b.dataset.id} disetujui oleh ${CURRENT_USER.name} (${ROLE}).`);
-      renderApproval();
-    }));
-    document.querySelectorAll('.apv-no').forEach(b=> b.addEventListener('click', ()=>{
-      saveApprovalDecision(b.dataset.id, 'Ditolak');
-      toast(`${b.dataset.id} ditolak oleh ${CURRENT_USER.name} (${ROLE}).`);
-      renderApproval();
-    }));
+    async function putuskan(btn, status){
+      const id = btn.dataset.id;
+      btn.disabled = true;
+      try{
+        await saveApprovalDecision(id, status);
+        toast(`${id} ${status.toLowerCase()} oleh ${CURRENT_USER.name} (${ROLE}).`);
+        renderApproval();
+      }catch(err){
+        btn.disabled = false;
+        handleApiError(err);
+      }
+    }
+    document.querySelectorAll('.apv-ok').forEach(b=> b.addEventListener('click', ()=> putuskan(b, 'Disetujui')));
+    document.querySelectorAll('.apv-no').forEach(b=> b.addEventListener('click', ()=> putuskan(b, 'Ditolak')));
   }
 
   // =============================================================================
@@ -2472,4 +2698,4 @@
   window.addEventListener('hashchange', route);
   route();
 
-})();
+};

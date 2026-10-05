@@ -89,60 +89,8 @@
 <div id="toast-root"></div>
 
 <script src="assets/js/icons.js"></script>
-<script src="assets/js/data.js"></script>
 <script src="assets/js/rbac.js"></script>
-<script>
-  document.getElementById('icon-mail-slot').innerHTML = icon('mail','');
-  document.getElementById('icon-lock-slot').innerHTML = icon('lock','');
-
-  const pwInput = document.getElementById('password');
-  const pwToggle = document.getElementById('pw-toggle');
-  let pwVisible = false;
-  function renderPwIcon(){ pwToggle.innerHTML = icon(pwVisible ? 'eyeOff':'eye',''); }
-  renderPwIcon();
-  pwToggle.addEventListener('click', ()=>{
-    pwVisible = !pwVisible;
-    pwInput.type = pwVisible ? 'text':'password';
-    renderPwIcon();
-  });
-
-  // Populate demo accounts from dummy data
-  const demoList = document.getElementById('demo-list');
-  SIMASET_DATA.demo_users.forEach(u=>{
-    const el = document.createElement('div');
-    el.className='demo-chip';
-    // Ringkasan hak akses peran agar terlihat sebelum masuk
-    const c = RBAC.countByLevel(u.role);
-    const total = c.R + c.RW + c.A;
-    el.innerHTML = `<b>${u.role}</b><span>${u.email}</span>`
-      + `<span class="demo-perm">${total} modul${c.A?` · ${c.A} dapat disetujui`:''}</span>`;
-    el.addEventListener('click', ()=>{
-      document.getElementById('email').value = u.email;
-      document.getElementById('password').value = u.password;
-    });
-    demoList.appendChild(el);
-  });
-
-  function showAlert(msg){
-    document.getElementById('login-alert').innerHTML =
-      `<div class="alert alert-error">${icon('alertCircle','')}<div>${msg}</div></div>`;
-  }
-
-  document.getElementById('login-form').addEventListener('submit', function(e){
-    e.preventDefault();
-    const email = document.getElementById('email').value.trim().toLowerCase();
-    const pass = document.getElementById('password').value;
-    const user = SIMASET_DATA.demo_users.find(u => u.email.toLowerCase()===email);
-    const btn = document.getElementById('login-btn');
-    if(!user || pass !== user.password){
-      showAlert('Email atau kata sandi tidak dikenali. Silakan pilih salah satu akun demo di bawah.');
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = 'Memproses…';
-    sessionStorage.setItem('simaset_user', JSON.stringify(user));
-    setTimeout(()=>{ window.location.href = 'app/index.html#/dashboard'; }, 450);
-  });
-</script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/login.js"></script>
 </body>
 </html>

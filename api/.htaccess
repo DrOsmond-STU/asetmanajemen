@@ -1,0 +1,23 @@
+# ==========================================================================
+# Routing API + perlindungan berkas internal
+# ==========================================================================
+
+# Kredensial basis data dan seluruh pustaka internal tidak boleh diakses
+# langsung lewat HTTP — hanya index.php yang menjadi pintu masuk.
+<FilesMatch "^(config|config\.sample)\.php$">
+  Require all denied
+</FilesMatch>
+RedirectMatch 404 ^/api/lib(/|$)
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /api/
+
+  # Lewatkan berkas yang benar-benar ada (tidak ada, tapi aman untuk dijaga).
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteCond %{REQUEST_URI} !^/api/(config|config\.sample)\.php$
+  RewriteRule ^index\.php$ - [L]
+
+  # Semua sisanya masuk ke front controller; jalur disimpan di _route.
+  RewriteRule ^(.*)$ index.php?_route=$1 [QSA,L]
+</IfModule>
