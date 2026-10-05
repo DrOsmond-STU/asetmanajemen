@@ -19,7 +19,7 @@ semua peran.
 Antrean transaksi yang menunggu persetujuan. Isi antrean ditentukan matriks
 hak akses: sebuah item hanya dapat disetujui peran yang memiliki tingkat `A`
 pada modul terkait. Peran lain tetap dapat melihat antrean sebagai informasi.
-Keputusan tersimpan di `localStorage`.
+Keputusan tersimpan di basis data beserta peran dan waktu pemutusnya.
 
 ---
 

@@ -6,8 +6,9 @@ Dokumen ini adalah **spesifikasi kewenangan** SIMASET BMN. Sumber tunggalnya
 adalah [`assets/js/rbac.js`](../assets/js/rbac.js); tabel di bawah dibangkitkan
 dari berkas tersebut sehingga selalu sama dengan yang berjalan di aplikasi.
 
-> ⚠️ Penegakan hak akses pada purwarupa ini berjalan di peramban dan merupakan
-> **kontrol antarmuka, bukan batas keamanan**. Lihat
+> ℹ️ Sejak v3.0.0 aturan ini **ditegakkan di server** pada setiap permintaan
+> API, bukan lagi hanya di peramban. Pemeriksaan di peramban tetap ada untuk
+> mengatur tampilan. Lihat [§5](#5-cara-aturan-ini-ditegakkan) dan
 > [SECURITY.md](../SECURITY.md).
 
 ---
@@ -106,15 +107,46 @@ Cyber = Cyber Officer · Audit = Auditor · Mgmt = Management.
 
 ## 5. Cara aturan ini ditegakkan
 
+Penegakan terjadi di **dua lapisan**, dan hanya satu di antaranya yang menjadi
+batas keamanan.
+
+### 5.1 Lapisan server — inilah batas keamanan
+
+Setiap permintaan API diperiksa sebelum data disentuh:
+
+| Jalur | Pemeriksaan | Bila gagal |
+|---|---|---|
+| `GET /api/records/{dataset}` | `requireRead(modul)` | `403` |
+| `POST` / `PUT` / `DELETE /api/records/…` | `requireWrite(modul)` | `403` |
+| `POST /api/approvals/{id}/decide` | `requireApprove` pada modul `approval` **dan** modul yang diampu permintaan, lalu `role_required` harus cocok | `403` |
+| `GET /api/bootstrap` | setiap dataset disaring; yang tidak boleh dibaca dikirim sebagai array kosong | — |
+
+Prinsipnya **tolak secara bawaan**: `rbacLevel()` mengembalikan `'-'` untuk
+peran atau modul yang tidak terdaftar, dan `'-'` berarti tidak ada akses.
+Setiap penolakan dicatat ke `audit_log` dengan aksi `denied`.
+
+Matriks yang dipakai server, [`api/lib/rbac-matrix.php`](../api/lib/rbac-matrix.php),
+**dibangkitkan** dari `assets/js/rbac.js` oleh `node db/gen-rbac.js` — tidak
+ditulis ulang dengan tangan, sehingga aturan di kedua sisi tidak mungkin
+berbeda.
+
+### 5.2 Lapisan peramban — hanya mengatur tampilan
+
 Tiga titik pemeriksaan di [`assets/js/app.js`](../assets/js/app.js):
 
 | Titik | Fungsi | Perilaku |
 |---|---|---|
 | Menu sidebar | `renderSidebar()` | Hanya merender item yang lolos `canRead()`; menambahkan penanda `R` atau `A` pada item |
 | Router | `route()` | Memanggil `canRead(hash)` sebelum merender; bila gagal → halaman **Akses Ditolak**, termasuk saat alamat diketik manual |
-| Kontrol aksi | `mountListPage()` dan renderer khusus | Tombol tambah/ubah hanya dirender bila `canWrite()`; tombol setujui hanya bila `canApprove()`; peran baca-saja mendapat penanda *Akses Lihat Saja* |
+| Kontrol aksi | `mountListPage()`, `attachRowActions()` dan renderer khusus | Tombol *Tambah Baru*, *Ubah* dan *Hapus* hanya dirender bila `canWrite()`; tombol setujui hanya bila `canApprove()`; peran baca-saja mendapat penanda *Akses Lihat Saja* |
 
-API yang tersedia (`assets/js/rbac.js`):
+Menghapus seluruh kode lapisan ini dari DevTools **tidak** memberi akses apa
+pun. Uji otomatis membuktikannya: sebagai Auditor, memanggil
+`API.create('assets', …)` langsung dari konsol peramban menghasilkan `403`.
+
+### 5.3 API yang tersedia
+
+Di peramban (`assets/js/rbac.js`):
 
 ```js
 RBAC.level(peran, modul)        // 'R' | 'RW' | 'A' | '-'
@@ -129,6 +161,20 @@ RBAC.describe(peran)            // uraian cakupan kewenangan
 Di dalam `app.js` tersedia pintasan yang sudah terikat ke peran pengguna
 aktif: `canRead(modul)`, `canWrite(modul)`, `canApprove(modul)`.
 
+Di server (`api/lib/rbac.php`):
+
+```php
+rbacLevel($peran, $modul)        // 'R' | 'RW' | 'A' | '-'
+rbacCanRead($peran, $modul)      // bool
+rbacCanWrite($peran, $modul)     // bool — true untuk RW dan A
+rbacCanApprove($peran, $modul)   // bool — true hanya untuk A
+rbacAllowedModules($peran)       // array id modul
+
+requireRead($modul);             // menghentikan permintaan dengan 403
+requireWrite($modul);
+requireApprove($modul);
+```
+
 ---
 
 ## 6. Mengubah kewenangan
@@ -136,8 +182,16 @@ aktif: `canRead(modul)`, `canWrite(modul)`, `canApprove(modul)`.
 1. Sunting objek `ROLE_ACCESS` pada `assets/js/rbac.js`.
 2. Modul baru juga harus didaftarkan pada array `RBAC_MODULES` agar ikut
    terhitung dan tampil pada matriks.
-3. Jalankan ulang uji peran — lihat [PENGEMBANGAN.md §Pengujian](PENGEMBANGAN.md#6-pengujian).
-4. Bangkitkan ulang dokumen daftar pengguna bila perlu (lihat
+3. **Bangkitkan ulang matriks server:**
+
+   ```bash
+   node db/gen-rbac.js     # assets/js/rbac.js -> api/lib/rbac-matrix.php
+   ```
+
+   Tanpa langkah ini server masih memakai aturan yang lama, dan antarmuka akan
+   menampilkan menu yang permintaannya ditolak `403`.
+4. Jalankan ulang uji peran — lihat [PENGEMBANGAN.md §Pengujian](PENGEMBANGAN.md#6-pengujian).
+5. Bangkitkan ulang dokumen daftar pengguna bila perlu (lihat
    [DEPLOY.md](DEPLOY.md)).
 
 Jangan menanam pemeriksaan peran ad-hoc di luar `rbac.js` — aturan yang
@@ -154,3 +208,12 @@ peran yang sedang aktif, dan menyediakan ekspor matriks ke CSV.
 Uji cepat: masuk sebagai `custodian@simaset.go.id` — harus tampil **10 menu**
 tanpa Master Data, Risk, atau Cyber. Lalu ketik `#/master-data` pada alamat —
 harus muncul halaman **Akses Ditolak**.
+
+Uji bahwa batasnya nyata, bukan sekadar tampilan: buka konsol peramban dan
+jalankan
+
+```js
+await API.list('cyber_assets')      // sebagai Custodian
+```
+
+Hasilnya harus `ApiError` dengan `status` `403`, bukan data.

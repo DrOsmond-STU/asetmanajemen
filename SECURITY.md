@@ -1,243 +1,382 @@
 # Keamanan — SIMASET BMN
 
-Dokumen ini menjelaskan model keamanan purwarupa SIMASET BMN: kontrol yang
-sudah diterapkan, kelemahan yang diketahui dan diterima pada tahap purwarupa,
-serta daftar pengerasan yang **wajib** dikerjakan sebelum sistem dipakai dengan
-data sungguhan.
+Dokumen ini menjelaskan model keamanan SIMASET BMN: kontrol yang **benar-benar
+ada di dalam kode dan sudah diuji**, kelemahan yang diketahui beserta
+statusnya, serta daftar pengerasan yang wajib dikerjakan sebelum sistem dipakai
+dengan data BMN sungguhan.
 
-Dokumen terkait: [README](README.md) · [Hak Akses & Peran](docs/HAK-AKSES.md) ·
-[Arsitektur](docs/ARSITEKTUR.md) · [Data & Penyimpanan](docs/DATA.md)
+Dokumen terkait: [README](README.md) · [API](docs/API.md) ·
+[Hak Akses & Peran](docs/HAK-AKSES.md) · [Arsitektur](docs/ARSITEKTUR.md) ·
+[Data](docs/DATA.md) · [Deploy](docs/DEPLOY.md)
 
 ---
 
-## 1. Peringatan utama
+## 1. Keadaan saat ini
 
-> **SIMASET BMN adalah purwarupa front-end tanpa server aplikasi.**
-> Seluruh logika, data, dan pemeriksaan hak akses berjalan di peramban pengguna.
+Sejak **v3.0.0** SIMASET BMN bukan lagi purwarupa front-end. Aplikasi ini
+memiliki backend PHP dan basis data MariaDB, dan hal berikut sudah berubah
+secara mendasar:
 
-Konsekuensi yang harus dipahami semua pihak sebelum demo atau uji coba:
+| Hal | Sebelum (v2.x) | Sekarang (v3.0.0) |
+|---|---|---|
+| Hak akses | Kontrol antarmuka saja; dapat dilewati dari DevTools | **Ditegakkan di server** pada setiap permintaan |
+| Autentikasi | Pencocokan kata sandi di peramban | `password_verify` terhadap hash di basis data, sesi server |
+| Data | Seluruh dataset dikirim ke setiap peramban | Server hanya mengirim dataset yang boleh dibaca peran itu |
+| Kata sandi | Teks terbuka di `assets/js/data.js` yang dapat diunduh publik | Hash di basis data; tidak pernah ikut pada respons API |
+| Data baru | `localStorage` per perangkat | Basis data, dengan jejak audit |
+| Foto | Data URI di `localStorage` | Berkas di server, disandikan ulang sehingga metadata terbuang |
 
-| Hal | Kenyataan pada purwarupa |
-|---|---|
-| Pemeriksaan hak akses (RBAC) | **Kontrol antarmuka, bukan batas keamanan.** Siapa pun yang membuka DevTools dapat mengubah perannya sendiri dan membuka modul apa pun. |
-| Autentikasi | Pencocokan email/kata sandi di sisi peramban. Tidak ada sesi server, token, maupun verifikasi. |
-| Kata sandi akun demo | Tersimpan **terbuka** di `assets/js/data.js` dan terisi otomatis pada halaman masuk. Bersifat publik, bukan rahasia. |
-| Seluruh data | Dikirim ke peramban apa adanya. Tidak ada penyaringan data per peran di sisi server — karena tidak ada server. |
-| Data yang ditambahkan pengguna | Disimpan di `localStorage` peramban, **tanpa enkripsi**, dan bertahan sampai dihapus manual. |
+### Yang masih harus dipahami
+
+> **Data yang terpasang sekarang adalah data contoh, dan kata sandi akun demo
+> dipublikasikan** (`simaset123`) supaya aplikasi dapat diperagakan siapa saja.
+
+Selama kata sandi demo masih seperti itu, **siapa pun di internet dapat masuk
+sebagai Super Admin** dan mengubah seluruh data. Karena itu:
 
 **Jangan memasukkan data BMN sungguhan, data pribadi, dokumen internal, atau
-foto aset sensitif ke dalam purwarupa ini.** Gunakan data contoh saja.
+foto aset sensitif sebelum §5 dikerjakan.**
 
 ---
 
 ## 2. Lingkup dan aset yang dilindungi
 
-| Aset informasi | Lokasi pada purwarupa | Sensitivitas |
+| Aset informasi | Lokasi | Sensitivitas |
 |---|---|---|
-| Data aset BMN simulasi | `assets/js/data.js` (statis, publik) | Rendah — data contoh |
-| Catatan yang ditambahkan pengguna | `localStorage: simaset_user_records_v1` | Rendah–sedang, tergantung isian pengguna |
-| Foto aset / bukti pekerjaan | `localStorage: simaset_asset_photos_v1` dan di dalam catatan | **Sedang–tinggi** — foto dapat memuat ruangan, perangkat, atau dokumen |
-| Keputusan persetujuan | `localStorage: simaset_approvals_v1` | Rendah |
-| Identitas sesi pengguna aktif | `sessionStorage: simaset_user` | Rendah |
+| Kredensial basis data | `api/config.php` di server — **tidak ikut git**, izin `600` | **Tinggi** |
+| Hash kata sandi pengguna | `users.password_hash` | **Tinggi** |
+| Data aset BMN | tabel basis data | Sedang (contoh) → **Tinggi** bila diisi data sungguhan |
+| Foto aset / bukti pekerjaan | berkas di `uploads/photos/` | **Sedang–tinggi** — foto dapat memuat ruangan, perangkat, atau dokumen |
+| Aset siber & kripto | tabel `cyber_assets`, `access_logs` | **Tinggi** — hanya 6 peran berhak membacanya |
+| Jejak audit | tabel `audit_log` | Sedang — bukti pemeriksaan |
+| Sesi pengguna aktif | cookie `SIMASETSID` (HttpOnly) + sesi server | Sedang |
 
-Perangkat bersama (laptop demo, komputer ruang rapat) adalah titik risiko
-terbesar: `localStorage` tidak hilang saat tab ditutup. Lihat
-[§6 Pembersihan data](#6-pembersihan-data-pada-perangkat-bersama).
+Berkas yang **tidak boleh** dapat diakses lewat HTTP dan sudah diblokir:
+`api/config.php`, seluruh `api/lib/`, seluruh `db/` (skema, seeder, data
+sumber), dan direktori `.git/`. Lihat §3.7.
 
 ---
 
 ## 3. Kontrol yang sudah diterapkan
 
-Kontrol berikut **benar-benar ada** di dalam kode dan sudah diuji otomatis.
+Semuanya ada di dalam kode dan terverifikasi oleh uji otomatis (§6).
 
-### 3.1 Kontrol akses berbasis peran (lapisan antarmuka)
+### 3.1 Kontrol akses berbasis peran — di server
 
-Didefinisikan terpusat di [`assets/js/rbac.js`](assets/js/rbac.js) — matriks
-10 peran × 27 modul dengan tiga tingkat: `R` (lihat), `RW` (lihat + ubah),
-`A` (lihat + ubah + setujui).
+Matriks 10 peran × 27 modul dengan tiga tingkat: `R` (lihat), `RW` (lihat +
+ubah), `A` (lihat + ubah + setujui). Sumber kebenarannya satu berkas:
+[`assets/js/rbac.js`](assets/js/rbac.js).
 
-Tiga titik penegakan di `assets/js/app.js`:
+Versi PHP-nya, [`api/lib/rbac-matrix.php`](api/lib/rbac-matrix.php),
+**dibangkitkan** dari berkas itu oleh `node db/gen-rbac.js` — tidak ditulis
+ulang dengan tangan, sehingga aturan di server tidak mungkin menyimpang dari
+yang dipakai antarmuka.
 
-1. **Menu** — `renderSidebar()` hanya menampilkan modul yang lolos `canRead()`.
-2. **Rute** — `route()` memanggil `canRead()` sebelum merender; modul di luar
-   kewenangan menampilkan halaman *Akses Ditolak*, termasuk bila alamat
-   (`#/modul`) diketik manual.
-3. **Aksi** — tombol tambah/ubah hanya dirender bila `canWrite()`; tombol
-   setujui hanya bila `canApprove()`. Peran baca-saja mendapat penanda
-   *"Akses Lihat Saja"*.
+Penegakan di server, pada setiap permintaan:
 
-Prinsip **deny-by-default**: modul yang tidak tercantum pada peta peran otomatis
-tidak dapat diakses (`RBAC.level()` mengembalikan `-`).
+| Jalur | Pemeriksaan |
+|---|---|
+| `GET /api/records/{dataset}` | `requireRead` pada modul dataset |
+| `POST` / `PUT` / `DELETE /api/records/…` | `requireWrite` |
+| `POST /api/approvals/{id}/decide` | `requireApprove` pada modul `approval` **dan** modul yang diampu permintaan, lalu `role_required` harus cocok |
+| `GET /api/bootstrap` | tiap dataset disaring; yang tidak boleh dibaca dikirim sebagai array kosong |
 
-### 3.2 Pencegahan XSS pada keluaran
+Prinsipnya **tolak secara bawaan**: `rbacLevel()` mengembalikan `'-'` untuk
+peran atau modul yang tidak terdaftar, dan `'-'` berarti tidak ada akses.
 
-- Seluruh data yang disisipkan ke HTML melewati `esc()` yang meng-escape
-  `& < > " '`.
-- Teks yang masuk ke SVG ilustrasi melewati `xmlEsc()`.
-- Kolom tabel bertipe `html:true` (saat ini hanya kolom foto) adalah
-  **pengecualian yang disengaja** dan hanya boleh diisi nilai yang sudah
-  divalidasi — lihat §3.3.
+Pemeriksaan di peramban (menu, tombol, penjaga rute) tetap ada, tetapi
+fungsinya hanya mengatur tampilan. Menghapus seluruh kode itu dari DevTools
+tidak memberi akses apa pun — uji otomatis membuktikannya dengan memanggil
+`API.create()` langsung dari konsol sebagai Auditor dan menerima `403`.
 
-### 3.3 Daftar-izin data URI untuk foto
+### 3.2 Autentikasi dan sesi
 
-Nilai foto berasal dari `localStorage`, yang dapat disunting pemilik peramban.
-Tanpa penyaringan, nilai berisi tanda kutip dapat keluar dari atribut `src` dan
-menjalankan skrip. Karena itu setiap penyisipan foto melewati `safePhotoSrc()`:
+- Kata sandi diperiksa dengan `password_verify` terhadap `password_hash`
+  (bcrypt, `PASSWORD_DEFAULT`). Tidak ada kata sandi teks terbuka di basis
+  data maupun di kode.
+- Verifikasi hash **tetap dijalankan walau email tidak terdaftar**, memakai
+  hash tiruan, agar waktu tanggapan tidak membocorkan email mana yang ada.
+- Pesan galat **seragam** untuk kata sandi salah, email tidak ada, dan akun
+  tidak aktif: `Email atau kata sandi tidak dikenali.`
+- Hanya akun berstatus `Aktif` yang dapat masuk.
+- Cookie sesi: `HttpOnly` (tidak terbaca JavaScript), `Secure` (hanya HTTPS),
+  `SameSite=Lax` (tidak dikirim pada permintaan lintas situs).
+- `session_regenerate_id(true)` setelah masuk berhasil — mencegah
+  *session fixation*.
+- Tidak ada data pengguna yang disimpan di `localStorage` atau
+  `sessionStorage`; identitas sepenuhnya dipegang sesi server.
 
-```js
-const DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);...base64,[A-Za-z0-9+/=]+$
-                     |^data:image\/svg\+xml;charset=utf-8,[^"'<>]*$/i;
-function safePhotoSrc(value){
-  return (typeof value === 'string' && DATA_IMAGE_RE.test(value)) ? value : '';
-}
+### 3.3 Pembatasan percobaan masuk
+
+Tabel `login_attempts` mencatat setiap percobaan. Dalam jendela **15 menit**:
+
+- maksimum **20 kegagalan per alamat IP**,
+- maksimum **6 kegagalan per email**.
+
+Melewati batas → `429` tanpa memeriksa kata sandi lagi. Diuji: enam kegagalan
+beruntun memblokir akun itu sementara email lain tetap dapat masuk.
+
+### 3.4 CSRF
+
+Setiap permintaan yang mengubah keadaan (`POST`, `PUT`, `PATCH`, `DELETE`)
+wajib menyertakan header `X-CSRF-Token` yang sama dengan token pada sesi,
+dibandingkan dengan `hash_equals`. Tanpa token atau token salah → `419`.
+Hanya `auth/login` dikecualikan, dan jalur itu dilindungi pembatas percobaan.
+
+`SameSite=Lax` saja dianggap belum cukup karena peramban lama menanganinya
+secara berbeda.
+
+### 3.5 Masukan tidak pernah dipercaya
+
+- **Seluruh kueri memakai pernyataan tersiapkan** PDO dengan
+  `ATTR_EMULATE_PREPARES => false`, sehingga nilai disiapkan di sisi server
+  basis data dan tidak pernah disisipkan ke teks SQL.
+- Nama tabel dan kolom **hanya** berasal dari daftar putih di
+  `api/lib/datasets.php` dan `information_schema`; `ident()` menjadi jaring
+  pengaman terakhir dengan pola `^[A-Za-z_][A-Za-z0-9_]*$`.
+- Tipe dan panjang kolom dibaca dari `information_schema`, bukan ditulis ulang,
+  sehingga validasi tidak mungkin menyimpang dari skema.
+- Kolom yang tidak ada pada tabel **dibuang tanpa suara**.
+- Kunci utama **selalu** dibuat server; nilai id dari klien diabaikan.
+- Nilai turunan dihitung server, bukan dipercayakan ke klien: `bmn_uid`,
+  `category_code`, `sensitive`, `condition_label`, `location_id`,
+  `custodian_id`, `asset_name`, `score` dan `level` risiko, serta kolom
+  berbasis identitas (`requestor`, `operator`, `uploaded_by`, `user`) yang
+  diambil dari sesi.
+- Kolom `password_hash` ditandai `hidden` sehingga **tidak pernah** ikut pada
+  respons API mana pun, termasuk `GET /api/records/users`.
+
+### 3.6 Penanganan foto
+
+Foto adalah satu-satunya berkas yang diunggah pengguna, jadi perlakuannya
+ketat:
+
+1. Hanya data URI `image/jpeg`, `image/png`, `image/webp` yang diterima.
+   SVG **ditolak** karena dapat memuat skrip.
+2. Isinya diperiksa dengan `getimagesizefromstring` dan jenisnya harus cocok
+   dengan yang diakui.
+3. Isinya **didekode dan disandikan ulang** dengan GD menjadi JPEG. Ini
+   membuang seluruh metadata — termasuk koordinat GPS pada EXIF — dan membuat
+   berkas yang hanya *tampak* seperti gambar gagal di tahap ini.
+4. Nama berkas dibuat server: 32 digit heksadesimal acak, ekstensi selalu
+   `.jpg`. Nama kiriman pengguna tidak pernah dipakai.
+5. Direktori `uploads/photos/` otomatis diberi `.htaccess` yang mematikan
+   mesin PHP dan menolak berkas berekstensi skrip.
+6. Batas ukuran 3 MB dan dimensi maksimum 8000 px.
+7. Penghapusan berkas memeriksa `realpath` berada di dalam direktori unggahan
+   sebelum `unlink`.
+
+Di sisi peramban, `safePhotoSrc()` hanya meloloskan data URI gambar atau jalur
+berpola `uploads/photos/<32 heks>.jpg` sebelum nilainya masuk ke atribut `src`.
+
+### 3.7 Berkas yang tidak dapat diakses lewat HTTP
+
+`.htaccess` akar dan `api/.htaccess` menolak:
+
+| Jalur | Alasan |
+|---|---|
+| `/.git/` | Deploy memakai git sehingga riwayat berada di dalam docroot; tanpa aturan ini seluruh kode dan riwayatnya dapat diunduh |
+| `/db/` | Skema, seeder, dan data sumber. `db/seed.php` jika dapat dipanggil lewat HTTP berarti siapa pun dapat mengosongkan basis data |
+| `/api/config.php` | Kredensial basis data |
+| `/api/lib/` | Seluruh pustaka internal; satu-satunya pintu masuk adalah `api/index.php` |
+| `.sql`, `.log`, `.ini`, `.sh`, `.bak`, berkas berawalan titik | Pola umum berkas internal |
+
+`db/seed-src/data.js` (dataset lengkap) dahulu berada di `assets/js/` dan
+**dapat diunduh siapa saja** — memintas seluruh pemeriksaan hak akses. Berkas
+itu sudah dipindah ke `db/` yang diblokir. Lihat K-07.
+
+### 3.8 Header keamanan
+
+Dikirim pada setiap respons:
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;
+  connect-src 'self'; form-action 'self'; base-uri 'self';
+  object-src 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Cross-Origin-Opener-Policy: same-origin
+Permissions-Policy: camera=(self), microphone=(), geolocation=()
 ```
 
-Yang ditolak dan jatuh kembali ke ilustrasi kategori: `javascript:`,
-`data:text/html`, URL eksternal (`https://…`), dan payload base64 yang disisipi
-tanda kutip atau atribut (`…base64,x" onerror="…`).
+Catatan:
 
-Diuji otomatis: nilai jahat yang ditanam langsung ke `localStorage` tidak
-tereksekusi dan `src` kembali ke ilustrasi.
+- **`script-src` tidak memuat `'unsafe-inline'`.** Skrip sebaris yang dahulu
+  ada di `index.html` sudah dipindah ke `assets/js/login.js` agar hal ini
+  mungkin. Ini membuat CSP benar-benar berguna melawan XSS.
+- `style-src` masih memerlukan `'unsafe-inline'` karena banyak komponen
+  memakai atribut `style` sebaris — lihat K-05.
+- `img-src data:` diperlukan untuk pratinjau foto sebelum diunggah, ikon
+  favicon SVG, dan ilustrasi kategori yang dibuat di peramban.
+- `camera=(self)` diperlukan untuk pengambilan foto aset dari perangkat
+  bergerak.
+- HTTP dialihkan ke HTTPS lewat `mod_rewrite`.
 
-### 3.4 Tanpa dependensi pihak ketiga saat runtime
+### 3.9 Jejak audit
 
-Seluruh pustaka (Chart.js, qrcode-generator, JsBarcode) **di-host sendiri** di
-`assets/js/vendor/`. Tidak ada tag `<script>` ke CDN, sehingga tidak ada risiko
-*supply chain* dari skrip pihak ketiga saat aplikasi berjalan.
+Tabel `audit_log` mencatat waktu, pengguna, peran, aksi, dataset, id baris, dan
+IP untuk: `login`, `login_failed`, `login_throttled`, `logout`, `create`,
+`update`, `delete`, `approve`, dan **`denied`** — setiap penolakan hak akses.
+Kegagalan pencatatan tidak pernah menggagalkan permintaan pengguna, tetapi
+dicatat ke log galat PHP.
 
-> Pengecualian: `index.html` dan `app/index.html` memuat Google Fonts dari
-> `fonts.googleapis.com`. Ini permintaan CSS/font, bukan skrip, namun tetap
-> membocorkan alamat IP pengunjung ke Google. Untuk lingkungan tertutup,
-> host sendiri fontnya.
+Dapat dibaca lewat `GET /api/audit-log` oleh peran yang berhak atas modul
+`audit`.
 
-### 3.5 Pembatasan unggahan di sisi peramban
+### 3.10 Pengungkapan galat
 
-Foto dikompres ulang melalui `<canvas>` (maks 1024 px, JPEG kualitas 0,72)
-sebelum disimpan. Efek sampingnya: berkas digambar ulang menjadi JPEG baru,
-sehingga **metadata EXIF (termasuk koordinat GPS) ikut hilang** dan muatan
-berbahaya di dalam berkas gambar asli tidak ikut tersimpan.
+`debug` **wajib** `false` di server. Dengan begitu:
 
-Kegagalan kuota penyimpanan ditangani eksplisit: perubahan dibatalkan dan
-pengguna diberi tahu — tidak hilang diam-diam.
-
-### 3.6 Lain-lain
-
-- Tidak ada panggilan jaringan keluar, telemetri, maupun pelacak.
-- Keluar aplikasi menghapus `sessionStorage`; membuka `app/index.html` tanpa
-  sesi otomatis dialihkan ke halaman masuk.
-- Repositori tidak memuat kunci API, token, atau kredensial infrastruktur.
+- galat server menghasilkan pesan umum `Terjadi kesalahan pada server.`;
+- rinciannya (pesan, berkas, baris) hanya masuk log galat PHP;
+- galat koneksi basis data tidak pernah diteruskan ke klien karena pesan
+  aslinya dapat memuat kredensial.
 
 ---
 
-## 4. Kelemahan yang diketahui (diterima pada tahap purwarupa)
+## 4. Kelemahan yang diketahui
 
 | # | Kelemahan | Dampak | Status |
 |---|---|---|---|
-| K-01 | RBAC hanya di sisi peramban | Pengguna dapat mengubah peran sendiri lewat DevTools dan membuka seluruh modul | **Diterima** — tidak dapat diperbaiki tanpa server |
-| K-02 | Kata sandi tersimpan terbuka di `data.js` | Kredensial demo bersifat publik | **Diterima** — akun demo memang untuk publik |
-| K-03 | Seluruh dataset terkirim ke setiap pengguna | Peran terbatas tetap menerima seluruh data di peramban | **Diterima** — perlu penyaringan sisi server |
-| K-04 | `localStorage` tidak terenkripsi dan persisten | Foto/catatan tertinggal di perangkat bersama | **Mitigasi parsial** — tersedia cara pembersihan (§6) |
-| K-05 | Tanpa header keamanan (CSP, HSTS, X-Frame-Options) | Tidak ada pertahanan berlapis bila ada celah XSS | **Terbuka** — konfigurasi hosting, lihat §5.2 |
-| K-06 | Jejak audit hanya tampilan | Catatan audit tidak dapat dipercaya sebagai bukti | **Diterima** — perlu audit trail sisi server |
-| K-07 | Tanpa batas ukuran berkas sebelum dibaca | Berkas sangat besar dapat membuat tab tidak responsif | **Terbuka** — risiko rendah, hanya mengganggu diri sendiri |
+| **K-01** | **Kata sandi akun demo dipublikasikan** (`simaset123`, 10 akun termasuk Super Admin) | Siapa pun di internet dapat masuk dan mengubah seluruh data | **Diterima sementara** — disengaja agar dapat diperagakan. **Wajib** diubah sebelum data sungguhan (§5.1) |
+| **K-02** | Tidak ada MFA | Satu kata sandi bocor = akun terkuasai | **Terbuka** — kolom status MFA sudah ada pada data pengguna, mekanismenya belum |
+| **K-03** | Tidak ada kebijakan kata sandi selain panjang minimum 10 karakter | Kata sandi lemah dapat dipakai | **Mitigasi parsial** — panjang minimum ada, riwayat/kompleksitas/kedaluwarsa belum |
+| **K-04** | Pembatas percobaan masuk berbasis `REMOTE_ADDR` | Penyerang dengan banyak IP dapat memperlambat, bukan menghentikan | **Mitigasi parsial** — batas per email ikut membatasi serangan ke satu akun |
+| **K-05** | `style-src 'unsafe-inline'` masih diperlukan | Mengurangi manfaat CSP terhadap penyuntikan gaya | **Terbuka** — perlu memindahkan ±200 atribut `style` sebaris ke kelas CSS |
+| **K-06** | Foto yang sudah tersimpan dapat diakses siapa saja yang tahu URL-nya | Foto bukan rahasia per peran; nama berkas acak 128 bit menjadi satu-satunya penghalang | **Diterima** — ganti dengan penyajian lewat PHP yang memeriksa sesi bila foto memuat hal sensitif (§5.6) |
+| **K-07** | ~~Dataset lengkap dapat diunduh publik di `assets/js/data.js`~~ | ~~Memintas seluruh RBAC~~ | **Ditutup v3.0.0** — dipindah ke `db/seed-src/`, direktori `db/` ditolak web server, dan berkasnya tidak lagi dimuat halaman mana pun |
+| **K-08** | ~~RBAC hanya kontrol antarmuka~~ | ~~Dapat dilewati dari DevTools~~ | **Ditutup v3.0.0** — ditegakkan di server pada setiap permintaan |
+| **K-09** | ~~Kata sandi tersimpan terbuka~~ | ~~Dapat dibaca siapa saja~~ | **Ditutup v3.0.0** — `password_hash` di basis data |
+| **K-10** | Integrasi SAKTI/SIMAN, HR, Finance, IoT belum terhubung | Status dan riwayat yang ditampilkan adalah simulasi | **Terbuka** — bukan kelemahan keamanan, tetapi jangan dianggap data nyata |
+| **K-11** | Lima pengguna operasional tanpa kata sandi | Belum dapat masuk | **Disengaja** — tetapkan kata sandi lewat modul Manajemen Pengguna |
+| **K-12** | Tidak ada penguncian baris saat pembuatan ID | Dua permintaan bersamaan dapat memilih nomor yang sama | **Mitigasi** — benturan kunci terdeteksi basis data dan dicoba ulang hingga 5 kali |
 
 ---
 
-## 5. Pengerasan wajib sebelum produksi
+## 5. Pengerasan sebelum dipakai dengan data sungguhan
 
-### 5.1 Aplikasi
+### 5.1 Kredensial — wajib pertama
 
-- [ ] **Autentikasi di sisi server** — SSO/OIDC instansi, bukan pencocokan di peramban.
-- [ ] **Kata sandi di-hash** (Argon2id/bcrypt) bila tetap memakai basis lokal; MFA untuk peran Admin, Cyber Officer, dan Management.
-- [ ] **RBAC ditegakkan di API**, bukan hanya menu. Matriks pada `rbac.js` dipakai sebagai spesifikasi, implementasinya di server.
-- [ ] **Penyaringan data per peran** — API hanya mengirim data yang berhak dilihat pemanggil.
-- [ ] **Sesi aman** — cookie `HttpOnly`, `Secure`, `SameSite=Lax`, masa berlaku dan rotasi token.
-- [ ] **Audit trail sisi server** yang tidak dapat diubah pengguna (siapa, kapan, aksi, nilai sebelum/sesudah).
-- [ ] **Validasi masukan di server** untuk setiap field; jangan percaya validasi peramban.
-- [ ] **Unggahan berkas**: batas ukuran, pemeriksaan tipe sungguhan (magic bytes), pemindaian antivirus, penyimpanan di luar docroot, penyajian lewat endpoint berwenang.
-- [ ] **Klasifikasi foto aset** — foto ruang server/perangkat kripto diperlakukan sebagai informasi terbatas, dengan kontrol akses tersendiri.
-- [ ] **Pembatasan laju** (rate limiting) pada endpoint masuk dan unggah.
+1. Ganti kata sandi **seluruh** akun demo lewat modul Manajemen Pengguna, atau
+   langsung di basis data dengan `password_hash`.
+2. Hapus atau nonaktifkan akun demo yang tidak diperlukan.
+3. Hapus daftar `DEMO_ACCOUNTS` dan `DEMO_PASSWORD` dari
+   [`assets/js/login.js`](assets/js/login.js) agar pintasan isi-otomatis dan
+   kata sandi peragaan hilang dari halaman masuk.
+4. Hapus baris `akun_demo = 'Ya'` pada data pengguna, atau ubah nilainya.
+5. Ganti kata sandi pengguna basis data pada `api/config.php`.
 
-### 5.2 Hosting dan jaringan
+### 5.2 Periksa yang sudah ada — setiap kali deploy
 
-- [ ] HTTPS wajib + HSTS.
-- [ ] Header keamanan — contoh titik awal:
+```bash
+# Harus 403/404, bukan isi berkas:
+curl -sI https://domain/.git/HEAD
+curl -sI https://domain/db/schema.sql
+curl -sI https://domain/db/seed.php
+curl -sI https://domain/api/config.php
+curl -sI https://domain/api/lib/db.php
 
-  ```
-  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(self), geolocation=()
-  ```
+# Harus 404 (berkas sudah dipindah):
+curl -sI https://domain/assets/js/data.js
 
-  > Catatan: `img-src data:` diperlukan karena foto disimpan sebagai data URI.
-  > `camera=(self)` diperlukan agar pengambilan foto lewat kamera tetap jalan.
-  > CSP tanpa `unsafe-inline` pada `script-src` akan memblokir skrip inline di
-  > `index.html`; pindahkan skrip tersebut ke berkas terpisah lebih dulu.
+# Harus memuat CSP tanpa 'unsafe-inline' pada script-src:
+curl -sI https://domain/index.html | grep -i content-security-policy
+```
 
-- [ ] Direktori `.git/` tidak boleh dapat diakses publik — verifikasi
-      `https://<domain>/.git/HEAD` mengembalikan 403/404.
-- [ ] Nonaktifkan *directory listing*.
-- [ ] Cadangan berkala dan uji pemulihan.
+Skrip yang menjalankan seluruh pemeriksaan ini beserta uji API lengkap ada di
+[docs/DEPLOY.md §5](docs/DEPLOY.md#5-verifikasi).
 
-### 5.3 Proses
+### 5.3 Izin berkas
 
-- [ ] Uji penetrasi sebelum go-live.
-- [ ] Penilaian risiko dan *Statement of Applicability* bila menargetkan sertifikasi ISO/IEC 27001.
-- [ ] Prosedur penanganan insiden dan kontak pelaporan yang jelas.
+```bash
+chmod 600 api/config.php        # hanya pemilik; memuat kredensial
+chmod 755 uploads uploads/photos
+```
 
----
+### 5.4 Yang masih perlu dibangun
 
-## 6. Pembersihan data pada perangkat bersama
+| Kebutuhan | Keterangan |
+|---|---|
+| **MFA** | TOTP untuk peran Super Admin, Asset Manager, Cyber Officer, dan Management minimal |
+| **Kebijakan kata sandi** | Kompleksitas, riwayat, kedaluwarsa, penolakan kata sandi yang pernah bocor |
+| **Pencadangan** | Dump basis data terjadwal + `uploads/` ke lokasi terpisah, beserta uji pemulihan |
+| **Pemantauan** | Peringatan untuk lonjakan `login_failed` dan `denied` pada `audit_log` |
+| **Retensi jejak audit** | `audit_log` tumbuh tanpa batas; tentukan masa simpan dan arsipnya |
+| **Enkripsi saat diam** | Untuk kolom aset siber/kripto bila klasifikasinya menuntut |
+| **Uji penetrasi** | Oleh pihak ketiga sebelum menerima data BMN sungguhan |
 
-Setelah demo di perangkat bersama, hapus data lokal:
+### 5.5 Kebersihan basis data
 
-- **Cara aplikasi:** keluar lewat menu pengguna (membersihkan sesi), lalu
-- **Cara peramban:** DevTools → Application → Storage → *Clear site data*, atau
-- **Cara konsol:**
+- Pengguna basis data sudah terpisah per aplikasi dan hanya berhak atas satu
+  basis data. Jangan memberinya hak di luar itu.
+- Jangan pernah menjalankan `php db/seed.php --force` di server setelah ada
+  data sungguhan: perintah itu **mengosongkan seluruh tabel** lebih dahulu.
+  Skrip penyiapan di server memakai berkas penanda agar tidak terulang.
 
-  ```js
-  localStorage.removeItem('simaset_user_records_v1');
-  localStorage.removeItem('simaset_asset_photos_v1');
-  localStorage.removeItem('simaset_approvals_v1');
-  sessionStorage.clear();
-  ```
+### 5.6 Bila foto memuat hal sensitif
 
-Gunakan jendela penyamaran (incognito) untuk demo sekali pakai — seluruh data
-hilang saat jendela ditutup.
-
----
-
-## 7. Praktik pengembangan aman
-
-Aturan yang wajib diikuti saat menambah kode:
-
-1. **Selalu `esc()`** setiap nilai yang disisipkan ke HTML. Tidak ada
-   pengecualian tanpa alasan tertulis.
-2. **Kolom `html:true` dan `innerHTML` mentah** hanya boleh menerima nilai dari
-   fungsi validator (seperti `safePhotoSrc`). Tulis validatornya lebih dulu.
-3. **Jangan pernah** memakai `eval()`, `new Function()`, atau
-   `element.setAttribute('on…', …)`.
-4. **Jangan menambah skrip dari CDN.** Host sendiri di `assets/js/vendor/`.
-5. **Perubahan matriks hak akses** hanya di `rbac.js`; jangan menanam
-   pemeriksaan peran ad-hoc yang tersebar.
-6. Jalankan ulang uji peran (lihat [docs/PENGEMBANGAN.md](docs/PENGEMBANGAN.md))
-   setelah mengubah RBAC, menu, atau tombol aksi.
+Ganti penyajian berkas statis dengan skrip PHP yang memeriksa sesi dan hak
+akses sebelum mengirim isi berkas, lalu pindahkan `uploads/` ke luar docroot.
+Selama belum, anggap foto dapat dilihat siapa pun yang memperoleh URL-nya
+(K-06).
 
 ---
 
-## 8. Melaporkan kerentanan
+## 6. Verifikasi
 
-Temuan keamanan pada purwarupa ini dilaporkan ke pengelola repositori melalui
-kanal internal Lembaga Pusat Kajian Manajemen Indonesia (LPKMI). Mohon sertakan:
-langkah reproduksi, dampak, versi/commit, dan peramban yang dipakai. Jangan
-membuka *issue* publik untuk temuan berdampak tinggi.
+Keamanan di dokumen ini bukan klaim di atas kertas. Rinciannya diuji oleh
+rangkaian uji otomatis:
+
+| Rangkaian | Jumlah | Yang diuji |
+|---|---|---|
+| API lokal | 90 | Autentikasi, CSRF, CRUD, masukan tak dipercaya, RBAC, persetujuan, pembatas login |
+| CRUD peramban | 30 | Tambah/ubah/hapus nyata, persistensi setelah muat ulang, foto, penolakan server saat dipaksa dari konsol |
+| 10 peran × modulnya | 40 | Menu persis sama dengan matriks, 178 pemuatan halaman tanpa galat JS, modul terlarang menampilkan Akses Ditolak |
+| Tabel modul khusus | 15 | Ubah/hapus pada sensus, rekonsiliasi, aset siber, governance |
+| Keamanan | 19 | Unggah foto berbahaya, injeksi SQL, traversal, kebocoran kolom tersembunyi |
+| **Server sungguhan** | **111** | Seluruhnya di atas, dijalankan dari dalam server terhadap URL publiknya — termasuk `.htaccess`, header, dan cookie HTTPS |
+
+Uji server dijalankan dari dalam server karena lingkungan pengembangan tidak
+dapat menjangkau domain; berkasnya ada di `/home/semestat/simaset-apitest.php`
+(di luar docroot).
+
+---
+
+## 7. Aturan pengembangan
+
+1. **Jangan pernah** menambahkan kueri yang menyusun SQL dari nilai masukan.
+   Selalu pernyataan tersiapkan; nama kolom hanya dari daftar putih.
+2. **Jangan pernah** memercayai kiriman klien untuk kunci utama, kolom turunan,
+   atau kolom berbasis identitas pengguna.
+3. Setiap rute baru yang membaca atau mengubah data **wajib** memanggil
+   `requireRead` / `requireWrite` / `requireApprove`.
+4. Nilai apa pun yang masuk ke HTML harus lewat `esc()`; untuk atribut `src`
+   gambar lewat `safePhotoSrc()`.
+5. Bila `assets/js/rbac.js` berubah, jalankan `node db/gen-rbac.js` agar
+   matriks server mengikuti, lalu jalankan ulang rangkaian uji.
+6. Jangan menaruh kredensial di dalam kode atau repositori. Hanya
+   `api/config.php` di server, dan berkas itu ada di `.gitignore`.
+7. Pesan galat untuk pengguna tidak boleh memuat nama tabel, kolom, jalur
+   berkas, atau pesan asli basis data.
+
+---
+
+## 8. Melaporkan masalah keamanan
+
+Laporkan ke pengelola sistem LPKMI. Jangan membuka isu publik berisi rincian
+kerentanan sebelum ditangani. Sertakan: langkah reproduksi, dampak yang
+diperkirakan, dan versi/commit yang diuji.
 
 ---
 
 ## 9. Riwayat perbaikan keamanan
 
-| Tanggal | Perbaikan |
+| Versi | Perbaikan |
 |---|---|
-| 2026-10-03 | Penambahan `safePhotoSrc()` — daftar-izin data URI gambar pada seluruh titik penyisipan foto (detail aset, bukti Work Order/Inspeksi, thumbnail daftar, timeline riwayat, pratinjau formulir). Mencegah pelolosan atribut `src` dari nilai `localStorage` yang disunting. |
-| 2026-09-13 | Penerapan RBAC: penyaringan menu, *guard* rute terhadap akses via alamat langsung, dan penyembunyian kontrol ubah untuk peran baca-saja. |
+| **3.0.0** | RBAC ditegakkan di server (K-08 ditutup); kata sandi di-hash (K-09 ditutup); dataset lengkap tidak lagi dapat diunduh publik (K-07 ditutup); sesi cookie HttpOnly/Secure/SameSite; token CSRF; pembatas percobaan masuk; jejak audit; foto disandikan ulang di server; `.git` dan `db/` ditolak web server; CSP tanpa `'unsafe-inline'` pada `script-src`; `password_hash` tidak pernah ikut pada respons API |
+| 2.2.0 | `safePhotoSrc()` — daftar-izin data URI gambar sebelum nilai masuk ke atribut `src`, menutup XSS lewat nilai foto yang dapat disunting pemilik peramban |
+| 2.1.0 | Penjaga rute dan penyaringan menu berdasarkan matriks hak akses |
+| 2.0.0 | Seluruh pustaka pihak ketiga di-host sendiri, menghapus ketergantungan CDN |

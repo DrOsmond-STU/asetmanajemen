@@ -6,6 +6,87 @@ Seluruh perubahan penting pada SIMASET BMN. Format mengikuti
 
 ---
 
+## [3.0.0] — 2026-10-05
+
+Purwarupa statis menjadi aplikasi nyata: ada backend, basis data, autentikasi,
+dan hak akses yang ditegakkan di server.
+
+### Ditambahkan
+
+**Basis data**
+- `db/schema.sql`: 40 tabel MariaDB. Nama kolom sengaja sama dengan kunci JSON
+  front-end sehingga API memetakan baris 1:1 tanpa lapisan penerjemah.
+- `db/migrate.php` membangun tabel **dan memverifikasi** setiap tabel yang
+  diminta benar-benar terbentuk.
+- `db/seed.php` mengisi 904 baris data contoh; kata sandi akun demo di-hash
+  saat pengisian. `--force` mengosongkan tabel lebih dahulu.
+- `db/export-seed.js` dan `db/gen-rbac.js` sebagai pembangkit, agar tidak ada
+  data atau aturan yang ditulis ulang dengan tangan.
+
+**Backend (`api/`)**
+- Front controller dengan rute `auth/*`, `bootstrap`, `records/*`,
+  `approvals/*/decide`, `audit-log`, dan `health`.
+- Autentikasi: `password_verify` terhadap hash, sesi server,
+  `session_regenerate_id` setelah masuk.
+- Sesi: cookie `HttpOnly` + `Secure` + `SameSite=Lax`.
+- Token CSRF wajib pada setiap permintaan yang mengubah keadaan.
+- Pembatasan percobaan masuk: 20 kegagalan per IP dan 6 per email per 15 menit.
+- Jejak audit untuk create/update/delete/approve/login dan setiap penolakan
+  hak akses.
+- CRUD generik dengan daftar putih kolom dari `information_schema`, kunci utama
+  dibuat server, dan nilai turunan dihitung server.
+- Penanganan foto: diperiksa, didekode dan **disandikan ulang** oleh GD, lalu
+  disimpan sebagai berkas; basis data menyimpan jalurnya saja.
+
+**Front-end**
+- `assets/js/api.js` klien API, `assets/js/boot.js` pemuat data,
+  `assets/js/login.js` logika halaman masuk.
+- Tombol **Ubah** dan **Hapus** pada tabel daftar maupun pada tabel modul
+  berenderer khusus (sensus, rekonsiliasi, aset siber, governance).
+- Kolom kata sandi pada formulir pengguna; di-hash di server.
+- `docs/API.md`.
+
+### Diubah
+- **Hak akses kini ditegakkan di server** pada setiap permintaan. Matriksnya
+  dibangkitkan dari `assets/js/rbac.js` sehingga tidak mungkin menyimpang dari
+  yang dipakai antarmuka.
+- `app.js` tidak lagi berjalan sendiri saat dimuat; ia mendefinisikan
+  `window.startSimaset` yang dijalankan `boot.js` setelah data tiba. Seluruh
+  kode render yang ada dipakai tanpa diubah.
+- Dashboard **menyembunyikan** kartu yang modulnya tidak boleh dibaca, bukan
+  menampilkan angka nol yang menyesatkan. Pembagi dijaga agar tidak muncul
+  `NaN`.
+- Data baru, foto, dan keputusan persetujuan tidak lagi disimpan di
+  `localStorage`.
+- Skrip sebaris pada `index.html` dipindah ke berkas tersendiri agar CSP dapat
+  memakai `script-src 'self'` tanpa `'unsafe-inline'`.
+- Seluruh dokumentasi diperbarui mengikuti arsitektur baru.
+
+### Keamanan
+- **Dataset lengkap tidak lagi dapat diunduh publik.** `assets/js/data.js`
+  dipindah ke `db/seed-src/` dan direktori `db/` ditolak web server; sebelumnya
+  seluruh data — termasuk aset siber dan daftar akun — dapat diunduh siapa saja,
+  memintas seluruh pemeriksaan hak akses.
+- Kata sandi tidak lagi tersimpan sebagai teks terbuka.
+- `password_hash` tidak pernah ikut pada respons API mana pun.
+- `.htaccess`: tolak `.git` dan `db/`, header keamanan, CSP, paksa HTTPS.
+- `api/config.php` tidak ikut repositori dan berizin `600` di server.
+
+### Diperbaiki
+- Pemecah pernyataan pada `db/migrate.php` membuang potongan yang dimulai
+  dengan komentar `--`, sehingga di server hanya 23 dari 40 tabel terbentuk.
+  Kegagalannya tidak terdeteksi saat uji lokal karena skema sudah lebih dulu
+  dimuat lewat klien `mariadb`.
+- Seluruh identifier SQL di-backtick (`SENSITIVE` adalah reserved word MariaDB).
+- Jumlah modul pada halaman masuk: 21 → 27.
+
+### Verifikasi
+194 pemeriksaan lokal (API 90, CRUD peramban 30, 10 peran × seluruh modulnya
+40, tabel modul khusus 15, keamanan 19) dan **111 pemeriksaan di server
+sungguhan** dijalankan dari dalam server terhadap URL publiknya.
+
+---
+
 ## [2.2.0] — 2026-10-03
 
 ### Ditambahkan

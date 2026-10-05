@@ -128,28 +128,50 @@ kategori berwarna.
 | Pencarian | Kotak cari di atas tabel, mencari pada kolom-kolom kunci modul |
 | Filter | Dropdown di samping kotak cari (mis. kategori, status, criticality) |
 | Detail | Klik baris mana pun untuk membuka laci detail |
+| **Ubah** | Ikon pensil di kolom **Aksi** pada setiap baris. Formulirnya terisi nilai yang ada; kosongkan kolom kata sandi bila tidak ingin menggantinya |
+| **Hapus** | Ikon keranjang di kolom **Aksi**, dengan konfirmasi lebih dahulu |
 | Ekspor CSV | Tombol **Ekspor CSV** — mengekspor hasil yang sedang tersaring |
 | Pencarian global | Kotak cari di bar atas, melompat ke BMN Register dengan kata kunci terisi |
+
+Kolom **Aksi** hanya muncul bagi peran yang berwenang mengubah modul itu.
+Peran dengan kewenangan `R` melihat tabel tanpa kolom tersebut dan mendapat
+penanda *Akses Lihat Saja*.
 
 ---
 
 ## 5. Pertanyaan umum
 
-**Data yang saya tambahkan hilang setelah ganti peramban/perangkat.**
-Benar. Purwarupa menyimpan data di `localStorage` peramban masing-masing,
-bukan di server. Data tidak tersinkronisasi antar perangkat.
+**Apakah data yang saya masukkan tersimpan permanen?**
+Ya. Sejak v3.0.0 data tersimpan di basis data server, bukan lagi di peramban.
+Rekan Anda melihat perubahan yang sama, dari perangkat mana pun.
 
 **Menu saya lebih sedikit dari rekan saya.**
 Itu memang perilaku yang diharapkan — menu mengikuti peran. Buka **Hak Akses
-& Peran** untuk melihat perbandingannya.
+& Peran** untuk melihat perbandingannya. Kewenangan ini juga diperiksa server,
+jadi membuka alamat modul secara manual pun tidak memberi akses.
+
+**Beberapa kartu di dashboard tidak tampil.**
+Kartu yang sumbernya tidak boleh Anda baca sengaja disembunyikan, bukan
+ditampilkan sebagai nol — supaya tidak ada angka yang menyesatkan. Peran
+Finance, misalnya, tidak melihat kartu PM Compliance karena tidak berhak
+membaca modul pemeliharaan.
 
 **Foto gagal disimpan.**
-Kemungkinan kuota penyimpanan peramban penuh. Hapus sebagian foto, atau
-bersihkan data lokal ([SECURITY.md §6](../SECURITY.md#6-pembersihan-data-pada-perangkat-bersama)).
+Periksa pesan galat yang muncul. Penyebab tersering: berkasnya bukan JPEG/PNG/
+WebP, atau ukurannya melebihi 3 MB. Berkas SVG ditolak karena dapat memuat
+skrip.
 
-**Bagaimana mengembalikan aplikasi ke kondisi awal?**
-Hapus seluruh kunci `simaset_*` pada penyimpanan peramban, lalu muat ulang.
-Dataset bawaan tidak pernah berubah, sehingga aplikasi kembali seperti semula.
+**Saya mengubah kolom lain, apakah fotonya hilang?**
+Tidak. Selama Anda tidak menekan *Hapus* pada kolom foto, foto yang ada tetap
+tersimpan.
+
+**Saya terkunci setelah salah kata sandi beberapa kali.**
+Benar — setelah 6 kegagalan pada satu email dalam 15 menit, akun itu diblokir
+sementara. Tunggu 15 menit atau minta bantuan Super Admin.
+
+**Saya menambah pengguna baru tetapi dia tidak bisa masuk.**
+Kolom kata sandi mungkin dibiarkan kosong. Buka datanya lewat ikon **Ubah**,
+isi kata sandi (minimal 10 karakter), lalu simpan.
 
 **Tombol kamera tidak membuka kamera di laptop.**
 Pada desktop, tombol membuka pemilih berkas — perilaku normal. Atribut kamera
